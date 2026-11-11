@@ -1,0 +1,29 @@
+name: Validate deployment manifests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_NAME: validation
+      DEPLOYMENT_SLOT: blue
+      APPLICATION_IMAGE: docker.io/library/busybox:1.36
+      APPLICATION_PORT: "8080"
+      DEPLOY_NETWORK: validation-edge
+      CADDY_IMAGE: docker.io/library/caddy:2
+      CADDY_ACME_EMAIL: ci@example.invalid
+      HTTP_PORT: "18080"
+      HTTPS_PORT: "18443"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate application Compose
+        run: docker compose -f deploy/compose.yml config --quiet
+      - name: Validate infrastructure Compose
+        run: docker compose -f deploy/infrastructure/compose.yml config --quiet

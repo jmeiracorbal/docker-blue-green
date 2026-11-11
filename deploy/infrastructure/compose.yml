@@ -1,0 +1,28 @@
+name: "${PROJECT_NAME:?PROJECT_NAME is required}-infrastructure"
+
+services:
+  caddy:
+    image: "${CADDY_IMAGE:?CADDY_IMAGE is required}"
+    environment:
+      CADDY_ACME_EMAIL: "${CADDY_ACME_EMAIL:?CADDY_ACME_EMAIL is required}"
+    ports:
+      - "${HTTP_PORT:?HTTP_PORT is required}:80/tcp"
+      - "${HTTPS_PORT:?HTTPS_PORT is required}:443/tcp"
+      - "${HTTPS_PORT:?HTTPS_PORT is required}:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/routes:/etc/caddy/routes:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    networks:
+      - edge
+
+networks:
+  edge:
+    name: "${DEPLOY_NETWORK:?DEPLOY_NETWORK is required}"
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
