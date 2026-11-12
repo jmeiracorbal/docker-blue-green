@@ -383,6 +383,9 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 	if s.ActiveHash == hash(r) && s.ActiveVersion == r.Version && s.Phase == "" {
 		return nil
 	}
+	if err := os.MkdirAll(filepath.Dir(routeFile(root, r.Project)), 0750); err != nil {
+		return fmt.Errorf("prepare Caddy route directory: %w", err)
+	}
 	if err = c.run(ctx, root, infra, r, "blue", "up", "-d", "--wait", "--wait-timeout", strconv.Itoa(int(c.WaitTimeout.Seconds()))); err != nil {
 		return fmt.Errorf("start infrastructure: %w", err)
 	}
