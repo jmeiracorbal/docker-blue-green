@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jmeiracorbal/docker-blue-green/internal/scaffold"
+	"github.com/jmeiracorbal/docker-blue-green/internal/deploycli"
 )
 
 func main() {
@@ -20,6 +21,9 @@ func main() {
 }
 
 func run(args []string, input io.Reader, output io.Writer) error {
+	if len(args)>0 && (args[0]=="deploy" || args[0]=="rollback") {
+		return deploycli.Run(args, output)
+	}
 	if len(args) == 0 || args[0] != "init" {
 		return fmt.Errorf("usage: bluegreen init [--dir PATH] [--compose FILE] [--app SERVICE,...] [--infrastructure SERVICE,...]")
 	}

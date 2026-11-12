@@ -2,3 +2,5 @@
 .env.*
 !.env.example
 deploy/infrastructure/caddy/routes/*.caddy
+.bluegreen/
+.bluegreen-dist/

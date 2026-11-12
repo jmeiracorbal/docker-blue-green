@@ -40,7 +40,7 @@ func TestInitializeExistingCompose(t *testing.T) {
 			t.Errorf("app contains %s", bad)
 		}
 	}
-	for _, expected := range []string{`"8000"`, `"../backend"`, `"../backend/.env"`, `"../backend/media"`, `"${DEPLOY_NETWORK}"`} {
+	for _, expected := range []string{`"8000"`, `"../backend"`, `"../backend/.env"`, `"../backend/media"`, `"${DEPLOY_NETWORK}"`, `"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-api"`} {
 		if !strings.Contains(app, expected) {
 			t.Errorf("missing in app: %s", expected)
 		}
@@ -77,12 +77,13 @@ func TestNoSourceGeneratesBasicScaffold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 6 {
+	if len(files) != 7 {
 		t.Fatalf("got %d files", len(files))
 	}
 	if !strings.Contains(find(files, "deploy/compose.yml"), "${APPLICATION_IMAGE}") {
 		t.Fatal("missing default app")
 	}
+	if !strings.Contains(find(files, "deploy/routes.json"), `"routes": []`) { t.Fatal("missing route manifest") }
 	if !strings.Contains(find(files, "deploy/infrastructure/compose.yml"), "caddy:") {
 		t.Fatal("missing caddy")
 	}
