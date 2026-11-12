@@ -1,0 +1,27 @@
+name: Test CLI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - run: go vet ./...
+      - run: go build -o bluegreen ./cmd/bluegreen
+      - name: Verify generated Compose manifests
+        run: |
+          mkdir -p "$RUNNER_TEMP/bluegreen-smoke"
+          ./bluegreen init --dir "$RUNNER_TEMP/bluegreen-smoke"
+          docker compose -f "$RUNNER_TEMP/bluegreen-smoke/deploy/compose.yml" config --no-interpolate --quiet
+          docker compose -f "$RUNNER_TEMP/bluegreen-smoke/deploy/infrastructure/compose.yml" config --no-interpolate --quiet
