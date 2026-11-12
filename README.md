@@ -65,15 +65,18 @@ The initializer does not start containers. It rejects configurations that cannot
 
 A published GitHub Release builds every application service with a `build` definition in `deploy/compose.yml`. The images are pushed to the configured OCI registry with the release tag. Each resulting image digest is uploaded as a workflow artifact for later deployment.
 
-Set the following repository or environment variables for image publishing:
+Configure these values under **Settings → Secrets and variables → Actions** in the consuming GitHub repository.
 
-| Name | Purpose |
-| --- | --- |
-| `OCI_REGISTRY_HOST` | Registry server, such as `ghcr.io` or `registry.example.com`. |
-| `OCI_REGISTRY_REPOSITORY` | Image path, such as `team/project`. For a service named `api`, the published image is `<host>/team/project-api:<version>`. |
-| `OCI_REGISTRY_USERNAME` | Account used to authenticate to the registry (not the Git commit author). |
+| Name | GitHub setting | Example | Description |
+| --- | --- | --- | --- |
+| `OCI_REGISTRY_HOST` | Variable | `ghcr.io` | OCI registry hostname, without `https://`. |
+| `OCI_REGISTRY_REPOSITORY` | Variable | `company/project` | Repository path and image-name prefix within the registry. |
+| `OCI_REGISTRY_USERNAME` | Variable | `ci-publisher` | Account that authenticates to the registry; it is not the Git commit author. |
+| `OCI_REGISTRY_TOKEN` | Secret | *(registry access token)* | Credential authorized to push images. Never commit its value. |
 
-Set `OCI_REGISTRY_TOKEN` as a secret with image-push permissions. The registry is always configured explicitly; GHCR is not assumed.
+For a Compose service named `backend` and a release tagged `v1.2.0`, the example above publishes `ghcr.io/company/project-backend:v1.2.0`. The workflow also records the immutable image digest used by deployments.
+
+`ghcr.io` is an example, **not a default**. Supply the hostname and repository path of your chosen OCI-compatible registry.
 
 The generated workflow calls the shared publisher at a fixed commit for reproducibility. Publishing does not require deployment credentials. Once remote deployment is enabled and configured, the release workflow can deploy the published image digests.
 
@@ -88,8 +91,23 @@ bluegreen deploy --dir . --release release.json --env-file .env
 bluegreen rollback --dir . --project myapp --env-file .env
 ```
 
-The reusable remote workflow transfers the deployment bundle, a pinned Linux CLI binary, the image-digest manifest and the runtime environment. It uses `DEPLOY_PROJECT`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT` and `DEPLOY_SSH_KNOWN_HOSTS`; set `DEPLOY_ENABLED=true` to enable remote deployment. The deployment determines the registry from the immutable image references in the release manifest, without separate registry destination variables.
+The reusable remote workflow transfers the deployment bundle, a pinned Linux CLI binary, the image-digest manifest and the runtime environment. Configure the following values in **Settings → Secrets and variables → Actions** of the consuming repository:
 
-Provide `DEPLOY_SSH_PRIVATE_KEY` and `DEPLOY_ENV` as secrets. If the published images are private, configure `OCI_REGISTRY_PULL_USERNAME` and `OCI_REGISTRY_PULL_TOKEN` as secrets with read-only permissions; public images require neither. `DEPLOY_ENV` contains the environment consumed by the remote Compose files and is stored with restricted permissions. No cloud-provider-specific identifiers are required.
+| Name | GitHub setting | Example | Description |
+| --- | --- | --- | --- |
+| `DEPLOY_ENABLED` | Variable | `true` | Enables remote deployment when set to `true`. |
+| `DEPLOY_PROJECT` | Variable | `myapp` | Unique deployment identifier on the server. |
+| `DEPLOY_HOST` | Variable | `203.0.113.10` | Hostname or IP address of the Docker server. |
+| `DEPLOY_PORT` | Variable | `22` | SSH port. |
+| `DEPLOY_USER` | Variable | `deploy` | SSH account used to run Docker commands. |
+| `DEPLOY_SSH_KNOWN_HOSTS` | Variable | `203.0.113.10 ssh-ed25519 AAAA…` | Verified SSH host-key entry in `known_hosts` format. The example is abbreviated, not a valid key. |
+| `DEPLOY_SSH_PRIVATE_KEY` | Secret | *(SSH private key)* | Private key used to authenticate to the deployment server. |
+| `DEPLOY_ENV` | Secret | `PROJECT_NAME=myapp` | Runtime environment contents required by the generated Compose files; may contain multiple newline-separated entries. |
+| `OCI_REGISTRY_PULL_USERNAME` | Secret (optional) | `ci-reader` | Account authorized to download private OCI images. |
+| `OCI_REGISTRY_PULL_TOKEN` | Secret (optional) | *(read-only registry token)* | Credential for downloading private OCI images. |
+
+The two `OCI_REGISTRY_PULL_*` secrets are required **only for private images**. For public images, leave both unset. The publisher's `OCI_REGISTRY_TOKEN` is not forwarded to the deployment server.
+
+The deployment derives the registry hostname and exact image references from the release manifest; it does not need a second set of registry destination variables. No cloud-provider-specific identifiers are required.
 
 The remote workflow runs over verified SSH. Shared infrastructure remains up while the inactive application slot is prepared, then Caddy is reloaded only after the new containers pass their healthchecks. The previous slot is preserved for rollback. A full server-level end-to-end test must be performed before using the workflow for production traffic.
