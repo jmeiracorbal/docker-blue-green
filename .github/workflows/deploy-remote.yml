@@ -36,9 +36,9 @@ on:
         required: true
       DEPLOY_ENV:
         required: true
-      OCI_PULL_USERNAME:
+      OCI_REGISTRY_PULL_USERNAME:
         required: false
-      OCI_PULL_TOKEN:
+      OCI_REGISTRY_PULL_TOKEN:
         required: false
 
 permissions:
@@ -120,14 +120,14 @@ jobs:
           SSH_USER: ${{ inputs.deploy_user }}
           SSH_PORT: ${{ inputs.deploy_port }}
           DEPLOY_PROJECT: ${{ inputs.project }}
-          OCI_PULL_USERNAME: ${{ secrets.OCI_PULL_USERNAME }}
-          OCI_PULL_TOKEN: ${{ secrets.OCI_PULL_TOKEN }}
+          OCI_REGISTRY_PULL_USERNAME: ${{ secrets.OCI_REGISTRY_PULL_USERNAME }}
+          OCI_REGISTRY_PULL_TOKEN: ${{ secrets.OCI_REGISTRY_PULL_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -n "$OCI_PULL_USERNAME" || -n "$OCI_PULL_TOKEN" ]]; then
-            [[ -n "$OCI_PULL_USERNAME" && -n "$OCI_PULL_TOKEN" ]] || { echo "Both OCI pull credentials are required for private images" >&2; exit 1; }
-            [[ "$OCI_PULL_USERNAME" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "Invalid OCI pull username" >&2; exit 1; }
+          if [[ -n "$OCI_REGISTRY_PULL_USERNAME" || -n "$OCI_REGISTRY_PULL_TOKEN" ]]; then
+            [[ -n "$OCI_REGISTRY_PULL_USERNAME" && -n "$OCI_REGISTRY_PULL_TOKEN" ]] || { echo "Both OCI pull credentials are required for private images" >&2; exit 1; }
+            [[ "$OCI_REGISTRY_PULL_USERNAME" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "Invalid OCI pull username" >&2; exit 1; }
           fi
           registry_host=$(jq -er '
             [.images[] | strings | split("/")[0]] | unique |
@@ -141,11 +141,11 @@ jobs:
             .bluegreen-dist/deploy.tgz .bluegreen-dist/bluegreen \
             .bluegreen-dist/runtime.env .bluegreen-dist/release.json \
             "$SSH_USER@$SSH_HOST:$remote_dir/.incoming/"
-          if [[ -n "$OCI_PULL_TOKEN" ]]; then
-            printf '%s' "$OCI_PULL_TOKEN" | \
+          if [[ -n "$OCI_REGISTRY_PULL_TOKEN" ]]; then
+            printf '%s' "$OCI_REGISTRY_PULL_TOKEN" | \
               ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
                 "$SSH_USER@$SSH_HOST" \
-                "cd '$remote_dir' && install -d -m 700 .registry && DOCKER_CONFIG=\$PWD/.registry docker login '$registry_host' --username '$OCI_PULL_USERNAME' --password-stdin"
+                "cd '$remote_dir' && install -d -m 700 .registry && DOCKER_CONFIG=\$PWD/.registry docker login '$registry_host' --username '$OCI_REGISTRY_PULL_USERNAME' --password-stdin"
           fi
           ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \

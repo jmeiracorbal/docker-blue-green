@@ -3,12 +3,16 @@ name: Publish OCI images
 on:
   workflow_call:
     inputs:
-      image_prefix:
-        description: Full OCI image prefix, including registry host and repository path
+      oci_registry_host:
+        description: OCI registry hostname, for example ghcr.io
         type: string
         required: true
-      push_username:
-        description: Username authorized to push to the configured OCI registry
+      oci_registry_repository:
+        description: Image repository path, for example team/project
+        type: string
+        required: true
+      oci_registry_username:
+        description: Registry account used to publish images
         type: string
         required: true
       version:
@@ -20,7 +24,7 @@ on:
         type: string
         required: true
     secrets:
-      GIT_REGISTRY_TOKEN:
+      OCI_REGISTRY_TOKEN:
         required: true
 
 permissions:
@@ -45,17 +49,17 @@ jobs:
       - name: Validate OCI image destination and version
         id: registry
         env:
-          OCI_IMAGE_PREFIX: ${{ inputs.image_prefix }}
-          OCI_PUSH_USERNAME: ${{ inputs.push_username }}
+          OCI_REGISTRY_HOST: ${{ inputs.oci_registry_host }}
+          OCI_REGISTRY_REPOSITORY: ${{ inputs.oci_registry_repository }}
+          OCI_REGISTRY_USERNAME: ${{ inputs.oci_registry_username }}
           IMAGE_VERSION: ${{ inputs.version }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$OCI_IMAGE_PREFIX" =~ ^[a-z0-9][a-z0-9.:-]*/[a-z0-9][a-z0-9/_.-]*$ && "$OCI_IMAGE_PREFIX" != *"//"* ]] || { echo "A full OCI image prefix with explicit registry host and repository is required" >&2; exit 1; }
-          [[ -n "$OCI_PUSH_USERNAME" ]] || { echo "OCI push username is required" >&2; exit 1; }
-          registry_host="${OCI_IMAGE_PREFIX%%/*}"
-          [[ "$registry_host" == *.* || "$registry_host" == *:* || "$registry_host" == "localhost" ]] || { echo "The OCI image prefix must contain an explicit registry hostname" >&2; exit 1; }
-          echo "registry_host=$registry_host" >> "$GITHUB_OUTPUT"
+          [[ "$OCI_REGISTRY_HOST" =~ ^[a-z0-9][a-z0-9.:-]*$ && ( "$OCI_REGISTRY_HOST" == *.* || "$OCI_REGISTRY_HOST" == *:* || "$OCI_REGISTRY_HOST" == "localhost" ) ]] || { echo "Invalid OCI registry hostname" >&2; exit 1; }
+          [[ "$OCI_REGISTRY_REPOSITORY" =~ ^[a-z0-9][a-z0-9/_.-]*$ && "$OCI_REGISTRY_REPOSITORY" != *"//"* && "$OCI_REGISTRY_REPOSITORY" != */ ]] || { echo "Invalid OCI image repository path" >&2; exit 1; }
+          [[ -n "$OCI_REGISTRY_USERNAME" ]] || { echo "OCI registry username is required" >&2; exit 1; }
+          echo "registry_host=$OCI_REGISTRY_HOST" >> "$GITHUB_OUTPUT"
           [[ "$IMAGE_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "Invalid OCI image version" >&2; exit 1; }
 
       - id: images
@@ -105,8 +109,8 @@ jobs:
       - uses: docker/login-action@v3
         with:
           registry: ${{ needs.discover.outputs.registry_host }}
-          username: ${{ inputs.push_username }}
-          password: ${{ secrets.GIT_REGISTRY_TOKEN }}
+          username: ${{ inputs.oci_registry_username }}
+          password: ${{ secrets.OCI_REGISTRY_TOKEN }}
 
       - name: Build and publish versioned image
         id: build
@@ -118,7 +122,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ inputs.image_prefix }}-${{ matrix.service }}:${{ inputs.version }}
+            ${{ inputs.oci_registry_host }}/${{ inputs.oci_registry_repository }}-${{ matrix.service }}:${{ inputs.version }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -128,7 +132,8 @@ jobs:
 
       - name: Record image digest
         env:
-          OCI_IMAGE_PREFIX: ${{ inputs.image_prefix }}
+          OCI_REGISTRY_HOST: ${{ inputs.oci_registry_host }}
+          OCI_REGISTRY_REPOSITORY: ${{ inputs.oci_registry_repository }}
           IMAGE_SERVICE: ${{ matrix.service }}
           IMAGE_VERSION: ${{ inputs.version }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
@@ -136,8 +141,8 @@ jobs:
         run: |
           set -euo pipefail
           jq -n --arg service "$IMAGE_SERVICE" \
-                --arg tag "$OCI_IMAGE_PREFIX-$IMAGE_SERVICE:$IMAGE_VERSION" \
-                --arg digest "$OCI_IMAGE_PREFIX-$IMAGE_SERVICE@$IMAGE_DIGEST" \
+                --arg tag "$OCI_REGISTRY_HOST/$OCI_REGISTRY_REPOSITORY-$IMAGE_SERVICE:$IMAGE_VERSION" \
+                --arg digest "$OCI_REGISTRY_HOST/$OCI_REGISTRY_REPOSITORY-$IMAGE_SERVICE@$IMAGE_DIGEST" \
                 '{service: $service, tag: $tag, image: $digest}' > "$RUNNER_TEMP/image.json"
 
       - uses: actions/upload-artifact@v4
