@@ -139,9 +139,9 @@ The contract supports OpenBao KV v2. For project `myapp`, the above reference re
 With an already running and provisioned proxy, validate the read contract using:
 
 ```bash
-bluegreen secrets check --dir . --project myapp --socket /run/bluegreen/myapp/openbao.sock
+bluegreen secrets check --dir . --project myapp
 ```
 
-The command checks availability and access without printing or persisting secret values. The socket path is explicit, not discovered from environment variables. OpenBao policies and Unix socket permissions remain mandatory security boundaries.
+The command checks availability and access without printing or persisting secret values. The CLI derives the proxy endpoint from the validated project identifier: `/run/bluegreen/<project>/openbao.sock`. Server provisioning must expose the project's authenticated OpenBao Proxy at that exact Unix socket; there is no CLI socket flag, environment override, or fallback. OpenBao policies and Unix socket permissions remain mandatory security boundaries.
 
 **Current scope:** this command validates references against a running OpenBao Proxy. Automatic provisioning of Compose secrets, credential rotation/reconciliation, removal of the existing `DEPLOY_ENV` workflow input, and server provisioning with Ansible are **not implemented yet**. The existing deployment mechanism is unchanged until those integrations are tested.

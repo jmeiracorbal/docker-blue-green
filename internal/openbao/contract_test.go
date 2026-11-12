@@ -68,7 +68,7 @@ func TestCheckUsesScopedReadOnlyAPI(t *testing.T) {
 			"metadata": map[string]int{"version": 3},
 		}})
 	})
-	client, err := NewClient(socket)
+	client, err := newClientAtSocket(socket)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestErrorsDoNotRevealSecretData(t *testing.T) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(leaked))
 	})
-	client, err := NewClient(socket)
+	client, err := newClientAtSocket(socket)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestMissingFieldRejected(t *testing.T) {
 	socket := socketServer(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"data":{"data":{"different":"secret"},"metadata":{"version":2}}}`))
 	})
-	client, err := NewClient(socket)
+	client, err := newClientAtSocket(socket)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,10 +124,26 @@ func TestSocketMustBeUnix(t *testing.T) {
 	if err := os.WriteFile(file, []byte("not a socket"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewClient(file); err == nil {
+	if _, err := newClientAtSocket(file); err == nil {
 		t.Fatal("accepted non-socket")
 	}
-	if _, err := NewClient("relative.sock"); err == nil {
+	if _, err := newClientAtSocket("relative.sock"); err == nil {
 		t.Fatal("accepted relative socket")
 	}
+}
+
+func TestProxySocketPath(t *testing.T) {
+    got, err := ProxySocketPath("myapp")
+    if err != nil {
+        t.Fatal(err)
+    }
+    want := "/run/bluegreen/myapp/openbao.sock"
+    if got != want {
+        t.Fatalf("socket path = %q, want %q", got, want)
+    }
+    for _, invalid := range []string{"", "../other", "MyApp", "myapp/other", "myapp.sock"} {
+        if _, err := ProxySocketPath(invalid); err == nil {
+            t.Errorf("accepted invalid project %q", invalid)
+        }
+    }
 }

@@ -19,7 +19,26 @@ type Client struct {
 	http *http.Client
 }
 
-func NewClient(socket string) (*Client, error) {
+// ProxySocketPath is the fixed deployment endpoint for a project's proxy.
+// Server provisioning must expose the proxy socket at this location.
+func ProxySocketPath(project string) (string, error) {
+	if !projectName.MatchString(project) {
+		return "", fmt.Errorf("invalid OpenBao project name %q", project)
+	}
+	return filepath.Join("/run/bluegreen", project, "openbao.sock"), nil
+}
+
+// NewClient connects to the project's provisioned OpenBao Proxy endpoint.
+func NewClient(project string) (*Client, error) {
+	socket, err := ProxySocketPath(project)
+	if err != nil {
+		return nil, err
+	}
+	return newClientAtSocket(socket)
+}
+
+// newClientAtSocket allows internal tests to use a temporary Unix socket.
+func newClientAtSocket(socket string) (*Client, error) {
 	if socket == "" || !filepath.IsAbs(socket) {
 		return nil, errors.New("OpenBao Proxy requires an absolute Unix socket path")
 	}
