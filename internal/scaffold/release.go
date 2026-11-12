@@ -17,24 +17,25 @@ permissions:
 
 jobs:
   publish:
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@4fad31c5482e614d80589499fa3242908e705e93
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@ad39017c75238e96e9eaadbd1fe4fb0cf16458c5
     with:
-      image_prefix: ${{ vars.OCI_IMAGE_PREFIX }}
-      push_username: ${{ vars.OCI_PUSH_USERNAME }}
+      oci_registry_host: ${{ vars.OCI_REGISTRY_HOST }}
+      oci_registry_repository: ${{ vars.OCI_REGISTRY_REPOSITORY }}
+      oci_registry_username: ${{ vars.OCI_REGISTRY_USERNAME }}
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
     secrets:
-      GIT_REGISTRY_TOKEN: ${{ secrets.GIT_REGISTRY_TOKEN }}
+      OCI_REGISTRY_TOKEN: ${{ secrets.OCI_REGISTRY_TOKEN }}
 
   deploy:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     needs: publish
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@4fad31c5482e614d80589499fa3242908e705e93
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@ad39017c75238e96e9eaadbd1fe4fb0cf16458c5
     with:
       project: ${{ vars.DEPLOY_PROJECT }}
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
-      engine_ref: 4fad31c5482e614d80589499fa3242908e705e93
+      engine_ref: ad39017c75238e96e9eaadbd1fe4fb0cf16458c5
       deploy_host: ${{ vars.DEPLOY_HOST }}
       deploy_user: ${{ vars.DEPLOY_USER }}
       deploy_port: ${{ fromJSON(vars.DEPLOY_PORT) }}
@@ -42,8 +43,8 @@ jobs:
     secrets:
       DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
       DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}
-      OCI_PULL_USERNAME: ${{ secrets.OCI_PULL_USERNAME }}
-      OCI_PULL_TOKEN: ${{ secrets.OCI_PULL_TOKEN }}
+      OCI_REGISTRY_PULL_USERNAME: ${{ secrets.OCI_REGISTRY_PULL_USERNAME }}
+      OCI_REGISTRY_PULL_TOKEN: ${{ secrets.OCI_REGISTRY_PULL_TOKEN }}
 `),
 	}
 }

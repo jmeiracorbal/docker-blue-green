@@ -170,8 +170,8 @@ func TestPublishedWorkflowUsesRegistryContract(t *testing.T) {
     workflow := find(files, ".github/workflows/release.yml")
     for _, expected := range []string{
         "on:", "types: [published]",
-        "vars.OCI_IMAGE_PREFIX", "vars.OCI_PUSH_USERNAME",
-        "secrets.GIT_REGISTRY_TOKEN", "github.event.release.tag_name",
+        "vars.OCI_REGISTRY_HOST", "vars.OCI_REGISTRY_REPOSITORY", "vars.OCI_REGISTRY_USERNAME",
+        "secrets.OCI_REGISTRY_TOKEN", "github.event.release.tag_name",
         "docker-blue-green/.github/workflows/publish-images.yml@",
     } {
         if !strings.Contains(workflow, expected) {
@@ -184,19 +184,26 @@ func TestPublishedWorkflowUsesRegistryContract(t *testing.T) {
     }
     deployJob := releaseParts[1]
     for _, unexpected := range []string{
-        "vars.OCI_IMAGE_PREFIX",
-        "vars.OCI_PUSH_USERNAME",
-        "secrets.GIT_REGISTRY_TOKEN",
-        "registry_url:",
-        "registry_username:",
+        "vars.OCI_REGISTRY_HOST",
+        "vars.OCI_REGISTRY_REPOSITORY",
+        "vars.OCI_REGISTRY_USERNAME",
+        "secrets.OCI_REGISTRY_TOKEN",
+        "oci_registry_host:",
+        "oci_registry_repository:",
+        "oci_registry_username:",
     } {
         if strings.Contains(deployJob, unexpected) {
             t.Errorf("deploy job repeats publishing configuration %q", unexpected)
         }
     }
-    for _, required := range []string{"secrets.OCI_PULL_USERNAME", "secrets.OCI_PULL_TOKEN"} {
+    for _, required := range []string{"secrets.OCI_REGISTRY_PULL_USERNAME", "secrets.OCI_REGISTRY_PULL_TOKEN"} {
         if !strings.Contains(deployJob, required) {
             t.Errorf("deploy job missing optional private registry credential %q", required)
+        }
+    }
+    for _, obsolete := range []string{"OCI_IMAGE_PREFIX", "OCI_PUSH_USERNAME", "GIT_REGISTRY_TOKEN", "OCI_PULL_USERNAME", "OCI_PULL_TOKEN"} {
+        if strings.Contains(workflow, obsolete) {
+            t.Errorf("obsolete OCI variable in generated workflow: %q", obsolete)
         }
     }
     if strings.Contains(workflow, "publish-images.yml@main") {
