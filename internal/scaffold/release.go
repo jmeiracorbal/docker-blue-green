@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   publish:
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@f68e228fe85db9393f0eb7d61565686a01be093c
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@7e25b996665efdeebde489a64699dcdfab1cf4ed
     with:
       registry_url: ${{ vars.REGISTRY_URL }}
       registry_repository: ${{ vars.REGISTRY_REPOSITORY }}
@@ -30,12 +30,12 @@ jobs:
   deploy:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     needs: publish
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@e224ce1f30776f1929755581f68a70bfe0e48ccb
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@7e25b996665efdeebde489a64699dcdfab1cf4ed
     with:
       project: ${{ vars.DEPLOY_PROJECT }}
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
-      engine_ref: e224ce1f30776f1929755581f68a70bfe0e48ccb
+      engine_ref: 7e25b996665efdeebde489a64699dcdfab1cf4ed
       registry_url: ${{ vars.REGISTRY_URL }}
       registry_username: ${{ vars.REGISTRY_USERNAME }}
       deploy_host: ${{ vars.DEPLOY_HOST }}
