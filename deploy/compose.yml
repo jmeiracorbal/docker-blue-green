@@ -1,17 +1,17 @@
-name: "${PROJECT_NAME:?PROJECT_NAME is required}-${DEPLOYMENT_SLOT:?DEPLOYMENT_SLOT is required}"
+name: "${PROJECT_NAME}-${DEPLOYMENT_SLOT}"
 
 services:
   app:
-    image: "${APPLICATION_IMAGE:?APPLICATION_IMAGE is required}"
+    image: "${APPLICATION_IMAGE}"
     expose:
-      - "${APPLICATION_PORT:?APPLICATION_PORT is required}"
+      - "${APPLICATION_PORT}"
     restart: unless-stopped
     networks:
       edge:
         aliases:
-          - "${PROJECT_NAME:?PROJECT_NAME is required}-${DEPLOYMENT_SLOT:?DEPLOYMENT_SLOT is required}-app"
+          - "${PROJECT_NAME}-${DEPLOYMENT_SLOT}-app"
 
 networks:
   edge:
     external: true
-    name: "${DEPLOY_NETWORK:?DEPLOY_NETWORK is required}"
+    name: "${DEPLOY_NETWORK}"
