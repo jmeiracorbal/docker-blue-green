@@ -19,12 +19,6 @@ on:
         description: Immutable Git revision of the Blue-Green CLI
         required: true
         type: string
-      registry_url:
-        required: true
-        type: string
-      registry_username:
-        required: true
-        type: string
       deploy_host:
         required: true
         type: string
@@ -42,8 +36,10 @@ on:
         required: true
       DEPLOY_ENV:
         required: true
-      GIT_REGISTRY_TOKEN:
-        required: true
+      OCI_PULL_USERNAME:
+        required: false
+      OCI_PULL_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -92,6 +88,10 @@ jobs:
             --slurpfile routes deploy/routes.json \
             '{project: $project, version: $version, images: $images[0], routes: $routes[0].routes}' \
             > .bluegreen-dist/release.json
+          jq -e '
+            (.images | type == "object" and length > 0) and
+            ([.images[] | strings | test("^[a-z0-9][a-z0-9.:-]*/[a-z0-9][a-z0-9/_.-]*@sha256:[a-f0-9]{64}$")] | all)
+          ' .bluegreen-dist/release.json >/dev/null
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
             go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen@$ENGINE_REF"
           cp "$(go env GOPATH)/bin/bluegreen" .bluegreen-dist/bluegreen
@@ -120,13 +120,20 @@ jobs:
           SSH_USER: ${{ inputs.deploy_user }}
           SSH_PORT: ${{ inputs.deploy_port }}
           DEPLOY_PROJECT: ${{ inputs.project }}
-          REGISTRY_URL: ${{ inputs.registry_url }}
-          REGISTRY_USERNAME: ${{ inputs.registry_username }}
-          REGISTRY_TOKEN: ${{ secrets.GIT_REGISTRY_TOKEN }}
+          OCI_PULL_USERNAME: ${{ secrets.OCI_PULL_USERNAME }}
+          OCI_PULL_TOKEN: ${{ secrets.OCI_PULL_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$REGISTRY_TOKEN"
+          if [[ -n "$OCI_PULL_USERNAME" || -n "$OCI_PULL_TOKEN" ]]; then
+            [[ -n "$OCI_PULL_USERNAME" && -n "$OCI_PULL_TOKEN" ]] || { echo "Both OCI pull credentials are required for private images" >&2; exit 1; }
+            [[ "$OCI_PULL_USERNAME" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "Invalid OCI pull username" >&2; exit 1; }
+          fi
+          registry_host=$(jq -er '
+            [.images[] | strings | split("/")[0]] | unique |
+            if length == 1 then .[0] else error("Release must contain images from one OCI registry") end
+          ' .bluegreen-dist/release.json)
+          [[ "$registry_host" =~ ^[a-z0-9][a-z0-9.:-]*$ ]] || { echo "Invalid OCI registry host in release manifest" >&2; exit 1; }
           remote_dir=".local/share/docker-blue-green/$DEPLOY_PROJECT"
           ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" "install -d -m 700 '$remote_dir/.incoming'"
@@ -134,13 +141,15 @@ jobs:
             .bluegreen-dist/deploy.tgz .bluegreen-dist/bluegreen \
             .bluegreen-dist/runtime.env .bluegreen-dist/release.json \
             "$SSH_USER@$SSH_HOST:$remote_dir/.incoming/"
-          printf '%s' "$REGISTRY_TOKEN" | \
-            ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
-              "$SSH_USER@$SSH_HOST" \
-              "docker login '$REGISTRY_URL' --username '$REGISTRY_USERNAME' --password-stdin"
+          if [[ -n "$OCI_PULL_TOKEN" ]]; then
+            printf '%s' "$OCI_PULL_TOKEN" | \
+              ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
+                "$SSH_USER@$SSH_HOST" \
+                "cd '$remote_dir' && install -d -m 700 .registry && DOCKER_CONFIG=\$PWD/.registry docker login '$registry_host' --username '$OCI_PULL_USERNAME' --password-stdin"
+          fi
           ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \
-            "cd '$remote_dir' && umask 077 && tar -xzf .incoming/deploy.tgz && install -m 700 .incoming/bluegreen ./bluegreen && install -m 600 .incoming/runtime.env ./.env && install -m 600 .incoming/release.json ./release.json && ./bluegreen deploy --dir . --release release.json --env-file .env"
+            "cd '$remote_dir' && umask 077 && tar -xzf .incoming/deploy.tgz && install -m 700 .incoming/bluegreen ./bluegreen && install -m 600 .incoming/runtime.env ./.env && install -m 600 .incoming/release.json ./release.json && DOCKER_CONFIG=\$PWD/.registry ./bluegreen deploy --dir . --release release.json --env-file .env"
 
       - name: Remove temporary remote credentials
         if: always()
@@ -149,11 +158,10 @@ jobs:
           SSH_USER: ${{ inputs.deploy_user }}
           SSH_PORT: ${{ inputs.deploy_port }}
           DEPLOY_PROJECT: ${{ inputs.project }}
-          REGISTRY_URL: ${{ inputs.registry_url }}
         shell: bash
         run: |
           if [[ -f "$HOME/.ssh/bluegreen" ]]; then
             ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
               "$SSH_USER@$SSH_HOST" \
-              "cd '.local/share/docker-blue-green/$DEPLOY_PROJECT' && rm -f .incoming/deploy.tgz .incoming/bluegreen .incoming/runtime.env .incoming/release.json && docker logout '$REGISTRY_URL' >/dev/null 2>&1 || true" || true
+              "cd '.local/share/docker-blue-green/$DEPLOY_PROJECT' && rm -f .incoming/deploy.tgz .incoming/bluegreen .incoming/runtime.env .incoming/release.json && rm -rf .registry" || true
           fi
