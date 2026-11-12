@@ -18,10 +18,15 @@ jobs:
           go-version-file: go.mod
       - run: go test ./...
       - run: go vet ./...
+      - name: Validate GitHub workflows
+        run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/*.yml
       - run: go build -o bluegreen ./cmd/bluegreen
       - name: Verify generated Compose manifests
         run: |
           mkdir -p "$RUNNER_TEMP/bluegreen-smoke"
           ./bluegreen init --dir "$RUNNER_TEMP/bluegreen-smoke"
+          test -s "$RUNNER_TEMP/bluegreen-smoke/.github/workflows/release.yml"
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 "$RUNNER_TEMP/bluegreen-smoke/.github/workflows/release.yml"
           docker compose -f "$RUNNER_TEMP/bluegreen-smoke/deploy/compose.yml" config --no-interpolate --quiet
           docker compose -f "$RUNNER_TEMP/bluegreen-smoke/deploy/infrastructure/compose.yml" config --no-interpolate --quiet

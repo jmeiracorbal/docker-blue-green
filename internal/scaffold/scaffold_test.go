@@ -77,7 +77,7 @@ func TestNoSourceGeneratesBasicScaffold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 5 {
+	if len(files) != 6 {
 		t.Fatalf("got %d files", len(files))
 	}
 	if !strings.Contains(find(files, "deploy/compose.yml"), "${APPLICATION_IMAGE}") {
@@ -161,4 +161,23 @@ func TestFindSourceAmbiguity(t *testing.T) {
 	if _, _, err := FindSource(root, ""); err == nil {
 		t.Fatal("expected ambiguity error")
 	}
+}
+
+func TestPublishedWorkflowUsesRegistryContract(t *testing.T) {
+    files, err := Generate(Options{})
+    if err != nil { t.Fatal(err) }
+    workflow := find(files, ".github/workflows/release.yml")
+    for _, expected := range []string{
+        "on:", "types: [published]",
+        "vars.REGISTRY_URL", "vars.REGISTRY_REPOSITORY", "vars.REGISTRY_USERNAME",
+        "secrets.GIT_REGISTRY_TOKEN", "github.event.release.tag_name",
+        "docker-blue-green/.github/workflows/publish-images.yml@",
+    } {
+        if !strings.Contains(workflow, expected) {
+            t.Errorf("missing %q in release workflow", expected)
+        }
+    }
+    if strings.Contains(workflow, "publish-images.yml@main") {
+        t.Fatal("reusable workflow must be pinned to an immutable commit")
+    }
 }
