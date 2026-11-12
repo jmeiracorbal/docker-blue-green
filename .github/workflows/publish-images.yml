@@ -64,7 +64,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker compose -f deploy/compose.yml config --format json --no-interpolate |
+          docker compose -f deploy/compose.yml config --format json --no-interpolate --no-path-resolution |
             jq -cer '
               .services
               | to_entries
@@ -76,6 +76,17 @@ jobs:
                 })
               | if length == 0 then error("No application services with a build definition were found in deploy/compose.yml") else {include: .} end
             ' > "$RUNNER_TEMP/build-matrix.json"
+          while IFS= read -r entry; do
+            context=$(jq -r '.context' <<< "$entry")
+            dockerfile=$(jq -r '.dockerfile' <<< "$entry")
+            [[ -n "$context" && "$context" != "null" && "$context" != /* ]] || exit 1
+            [[ -n "$dockerfile" && "$dockerfile" != /* ]] || exit 1
+            absolute_context=$(realpath -m "$GITHUB_WORKSPACE/deploy/$context")
+            absolute_dockerfile=$(realpath -m "$absolute_context/$dockerfile")
+            [[ "$absolute_context" == "$GITHUB_WORKSPACE/"* ]] || exit 1
+            [[ "$absolute_dockerfile" == "$GITHUB_WORKSPACE/"* ]] || exit 1
+            [[ -d "$absolute_context" && -f "$absolute_dockerfile" ]] || exit 1
+          done < <(jq -c '.include[]' "$RUNNER_TEMP/build-matrix.json")
           echo "matrix=$(cat "$RUNNER_TEMP/build-matrix.json")" >> "$GITHUB_OUTPUT"
 
   publish:
@@ -102,8 +113,8 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
+          context: ./deploy/${{ matrix.context }}
+          file: ./deploy/${{ matrix.context }}/${{ matrix.dockerfile }}
           target: ${{ matrix.target }}
           platforms: linux/amd64
           push: true
