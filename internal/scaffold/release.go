@@ -26,6 +26,26 @@ jobs:
       source_ref: ${{ github.event.release.tag_name }}
     secrets:
       GIT_REGISTRY_TOKEN: ${{ secrets.GIT_REGISTRY_TOKEN }}
+
+  deploy:
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    needs: publish
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@e224ce1f30776f1929755581f68a70bfe0e48ccb
+    with:
+      project: ${{ vars.DEPLOY_PROJECT }}
+      version: ${{ github.event.release.tag_name }}
+      source_ref: ${{ github.event.release.tag_name }}
+      engine_ref: e224ce1f30776f1929755581f68a70bfe0e48ccb
+      registry_url: ${{ vars.REGISTRY_URL }}
+      registry_username: ${{ vars.REGISTRY_USERNAME }}
+      deploy_host: ${{ vars.DEPLOY_HOST }}
+      deploy_user: ${{ vars.DEPLOY_USER }}
+      deploy_port: ${{ fromJSON(vars.DEPLOY_PORT) }}
+      deploy_ssh_known_hosts: ${{ vars.DEPLOY_SSH_KNOWN_HOSTS }}
+    secrets:
+      DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+      DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}
+      GIT_REGISTRY_TOKEN: ${{ secrets.GIT_REGISTRY_TOKEN }}
 `),
 	}
 }
