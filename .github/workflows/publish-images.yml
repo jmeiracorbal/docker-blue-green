@@ -53,7 +53,9 @@ jobs:
           set -euo pipefail
           [[ "$OCI_IMAGE_PREFIX" =~ ^[a-z0-9][a-z0-9.:-]*/[a-z0-9][a-z0-9/_.-]*$ && "$OCI_IMAGE_PREFIX" != *"//"* ]] || { echo "A full OCI image prefix with explicit registry host and repository is required" >&2; exit 1; }
           [[ -n "$OCI_PUSH_USERNAME" ]] || { echo "OCI push username is required" >&2; exit 1; }
-          echo "registry_host=${OCI_IMAGE_PREFIX%%/*}" >> "$GITHUB_OUTPUT"
+          registry_host="${OCI_IMAGE_PREFIX%%/*}"
+          [[ "$registry_host" == *.* || "$registry_host" == *:* || "$registry_host" == "localhost" ]] || { echo "The OCI image prefix must contain an explicit registry hostname" >&2; exit 1; }
+          echo "registry_host=$registry_host" >> "$GITHUB_OUTPUT"
           [[ "$IMAGE_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "Invalid OCI image version" >&2; exit 1; }
 
       - id: images

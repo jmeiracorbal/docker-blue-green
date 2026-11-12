@@ -90,7 +90,7 @@ jobs:
             > .bluegreen-dist/release.json
           jq -e '
             (.images | type == "object" and length > 0) and
-            ([.images[] | strings | test("^[a-z0-9][a-z0-9.:-]*/[a-z0-9][a-z0-9/_.-]*@sha256:[a-f0-9]{64}$")] | all)
+            ([.images[] | (type == "string" and test("^[a-z0-9][a-z0-9.:-]*/[a-z0-9][a-z0-9/_.-]*@sha256:[a-f0-9]{64}$"))] | all)
           ' .bluegreen-dist/release.json >/dev/null
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
             go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen@$ENGINE_REF"
@@ -133,7 +133,7 @@ jobs:
             [.images[] | strings | split("/")[0]] | unique |
             if length == 1 then .[0] else error("Release must contain images from one OCI registry") end
           ' .bluegreen-dist/release.json)
-          [[ "$registry_host" =~ ^[a-z0-9][a-z0-9.:-]*$ ]] || { echo "Invalid OCI registry host in release manifest" >&2; exit 1; }
+          [[ "$registry_host" =~ ^[a-z0-9][a-z0-9.:-]*$ && ( "$registry_host" == *.* || "$registry_host" == *:* || "$registry_host" == "localhost" ) ]] || { echo "Invalid OCI registry host in release manifest" >&2; exit 1; }
           remote_dir=".local/share/docker-blue-green/$DEPLOY_PROJECT"
           ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" "install -d -m 700 '$remote_dir/.incoming'"
