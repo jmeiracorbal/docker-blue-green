@@ -21,7 +21,7 @@ func main() {
 }
 
 func run(args []string, input io.Reader, output io.Writer) error {
-	if len(args)>0 && (args[0]=="deploy" || args[0]=="rollback") {
+	if len(args)>0 && (args[0]=="deploy" || args[0]=="rollback" || args[0]=="secrets") {
 		return deploycli.Run(args, output)
 	}
 	if len(args) == 0 || args[0] != "init" {

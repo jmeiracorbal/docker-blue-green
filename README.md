@@ -111,3 +111,37 @@ The two `OCI_REGISTRY_PULL_*` secrets are required **only for private images**. 
 The deployment derives the registry hostname and exact image references from the release manifest; it does not need a second set of registry destination variables. No cloud-provider-specific identifiers are required.
 
 The remote workflow runs over verified SSH. Shared infrastructure remains up while the inactive application slot is prepared, then Caddy is reloaded only after the new containers pass their healthchecks. The previous slot is preserved for rollback. A full server-level end-to-end test must be performed before using the workflow for production traffic.
+
+## OpenBao proxy contract
+
+OpenBao support is opt-in. The OpenBao server may run on another host; a project-scoped **OpenBao Proxy** runs separately from application containers and Caddy. The Blue-Green CLI communicates with that proxy over an access-restricted Unix socket. Images do not need OpenBao Agent or a process supervisor.
+
+The proxy must be provisioned with automatic authentication (`api_proxy { use_auto_auth_token = "force" }`) and a **read-only, project-scoped** OpenBao policy. Neither its credentials nor its Unix socket may be mounted into application containers. For a deployment named `myapp`, the proxy identity should be limited to reading `kv/data/projects/myapp/*`; the server administrator owns the initial identity and policy provisioning.
+
+Only projects using OpenBao need a `deploy/secrets.json` file. This file declares **references, not values**:
+
+```json
+{
+  "mount": "kv",
+  "secrets": [
+    {
+      "service": "api",
+      "name": "database_password",
+      "path": "database",
+      "field": "password"
+    }
+  ]
+}
+```
+
+The contract supports OpenBao KV v2. For project `myapp`, the above reference requests `GET /v1/kv/data/projects/myapp/database` through the local proxy and verifies that the `password` field contains a nonempty string. The `name` identifies the Docker Compose secret to provision for the named service in a later integration stage. Project scope is constructed by the CLI; it is not supplied as a free-form HTTP path.
+
+With an already running and provisioned proxy, validate the read contract using:
+
+```bash
+bluegreen secrets check --dir . --project myapp --socket /run/bluegreen/myapp/openbao.sock
+```
+
+The command checks availability and access without printing or persisting secret values. The socket path is explicit, not discovered from environment variables. OpenBao policies and Unix socket permissions remain mandatory security boundaries.
+
+**Current scope:** this command validates references against a running OpenBao Proxy. Automatic provisioning of Compose secrets, credential rotation/reconciliation, removal of the existing `DEPLOY_ENV` workflow input, and server provisioning with Ansible are **not implemented yet**. The existing deployment mechanism is unchanged until those integrations are tested.

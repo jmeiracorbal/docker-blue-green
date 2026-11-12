@@ -19,6 +19,8 @@ func Run(args []string, out io.Writer) error {
 		return errors.New("usage: bluegreen deploy --release FILE | bluegreen rollback --project NAME")
 	}
 	switch args[0] {
+	case "secrets":
+		return checkSecrets(args[1:], out)
 	case "deploy":
 		flags := flag.NewFlagSet("deploy", flag.ContinueOnError)
 		flags.SetOutput(io.Discard)
