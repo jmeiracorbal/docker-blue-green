@@ -1,0 +1,139 @@
+name: Publish OCI images
+
+on:
+  workflow_call:
+    inputs:
+      registry_url:
+        description: OCI registry host (for example, ghcr.io)
+        type: string
+        required: true
+      registry_repository:
+        description: Repository path and image prefix within the registry
+        type: string
+        required: true
+      registry_username:
+        description: Username authorized to publish images
+        type: string
+        required: true
+      version:
+        description: Release version to publish as a container image tag
+        type: string
+        required: true
+      source_ref:
+        description: Existing Git ref used to build the release
+        type: string
+        required: true
+    secrets:
+      GIT_REGISTRY_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-oci-${{ github.repository }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.images.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Verify registry and version
+        env:
+          REGISTRY_URL: ${{ inputs.registry_url }}
+          REGISTRY_REPOSITORY: ${{ inputs.registry_repository }}
+          REGISTRY_USERNAME: ${{ inputs.registry_username }}
+          IMAGE_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$REGISTRY_URL" =~ ^[a-z0-9][a-z0-9.:-]*$ ]] || { echo "Invalid registry URL" >&2; exit 1; }
+          [[ "$REGISTRY_REPOSITORY" =~ ^[a-z0-9][a-z0-9/_-]*$ ]] || { echo "Invalid registry repository" >&2; exit 1; }
+          [[ -n "$REGISTRY_USERNAME" ]] || { echo "Registry username is required" >&2; exit 1; }
+          [[ "$IMAGE_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "Invalid OCI image version" >&2; exit 1; }
+
+      - id: images
+        name: Discover buildable application services
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/compose.yml config --format json --no-interpolate |
+            jq -cer '
+              .services
+              | to_entries
+              | map(select(.value.build != null) | {
+                  service: .key,
+                  context: (if (.value.build | type) == "string" then .value.build else .value.build.context end),
+                  dockerfile: (if (.value.build | type) == "string" then "Dockerfile" else (.value.build.dockerfile // "Dockerfile") end),
+                  target: (if (.value.build | type) == "string" then "" else (.value.build.target // "") end)
+                })
+              | if length == 0 then error("No application services with a build definition were found in deploy/compose.yml") else {include: .} end
+            ' > "$RUNNER_TEMP/build-matrix.json"
+          echo "matrix=$(cat "$RUNNER_TEMP/build-matrix.json")" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry_url }}
+          username: ${{ inputs.registry_username }}
+          password: ${{ secrets.GIT_REGISTRY_TOKEN }}
+
+      - name: Build and publish versioned image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ inputs.registry_url }}/${{ inputs.registry_repository }}-${{ matrix.service }}:${{ inputs.version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ inputs.version }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Record image digest
+        env:
+          REGISTRY_URL: ${{ inputs.registry_url }}
+          REGISTRY_REPOSITORY: ${{ inputs.registry_repository }}
+          IMAGE_SERVICE: ${{ matrix.service }}
+          IMAGE_VERSION: ${{ inputs.version }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -n --arg service "$IMAGE_SERVICE" \
+                --arg tag "$REGISTRY_URL/$REGISTRY_REPOSITORY-$IMAGE_SERVICE:$IMAGE_VERSION" \
+                --arg digest "$REGISTRY_URL/$REGISTRY_REPOSITORY-$IMAGE_SERVICE@$IMAGE_DIGEST" \
+                '{service: $service, tag: $tag, image: $digest}' > "$RUNNER_TEMP/image.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ matrix.service }}
+          path: ${{ runner.temp }}/image.json
+          if-no-files-found: error
+          retention-days: 30
