@@ -170,12 +170,33 @@ func TestPublishedWorkflowUsesRegistryContract(t *testing.T) {
     workflow := find(files, ".github/workflows/release.yml")
     for _, expected := range []string{
         "on:", "types: [published]",
-        "vars.REGISTRY_URL", "vars.REGISTRY_REPOSITORY", "vars.REGISTRY_USERNAME",
+        "vars.OCI_IMAGE_PREFIX", "vars.OCI_PUSH_USERNAME",
         "secrets.GIT_REGISTRY_TOKEN", "github.event.release.tag_name",
         "docker-blue-green/.github/workflows/publish-images.yml@",
     } {
         if !strings.Contains(workflow, expected) {
             t.Errorf("missing %q in release workflow", expected)
+        }
+    }
+    releaseParts := strings.Split(workflow, "\n  deploy:\n")
+    if len(releaseParts) != 2 {
+        t.Fatal("expected separate publish and deploy jobs")
+    }
+    deployJob := releaseParts[1]
+    for _, unexpected := range []string{
+        "vars.OCI_IMAGE_PREFIX",
+        "vars.OCI_PUSH_USERNAME",
+        "secrets.GIT_REGISTRY_TOKEN",
+        "registry_url:",
+        "registry_username:",
+    } {
+        if strings.Contains(deployJob, unexpected) {
+            t.Errorf("deploy job repeats publishing configuration %q", unexpected)
+        }
+    }
+    for _, required := range []string{"secrets.OCI_PULL_USERNAME", "secrets.OCI_PULL_TOKEN"} {
+        if !strings.Contains(deployJob, required) {
+            t.Errorf("deploy job missing optional private registry credential %q", required)
         }
     }
     if strings.Contains(workflow, "publish-images.yml@main") {

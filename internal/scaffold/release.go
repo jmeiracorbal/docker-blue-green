@@ -17,11 +17,10 @@ permissions:
 
 jobs:
   publish:
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@7e25b996665efdeebde489a64699dcdfab1cf4ed
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@4fad31c5482e614d80589499fa3242908e705e93
     with:
-      registry_url: ${{ vars.REGISTRY_URL }}
-      registry_repository: ${{ vars.REGISTRY_REPOSITORY }}
-      registry_username: ${{ vars.REGISTRY_USERNAME }}
+      image_prefix: ${{ vars.OCI_IMAGE_PREFIX }}
+      push_username: ${{ vars.OCI_PUSH_USERNAME }}
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
     secrets:
@@ -30,14 +29,12 @@ jobs:
   deploy:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     needs: publish
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@7e25b996665efdeebde489a64699dcdfab1cf4ed
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@4fad31c5482e614d80589499fa3242908e705e93
     with:
       project: ${{ vars.DEPLOY_PROJECT }}
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
-      engine_ref: 7e25b996665efdeebde489a64699dcdfab1cf4ed
-      registry_url: ${{ vars.REGISTRY_URL }}
-      registry_username: ${{ vars.REGISTRY_USERNAME }}
+      engine_ref: 4fad31c5482e614d80589499fa3242908e705e93
       deploy_host: ${{ vars.DEPLOY_HOST }}
       deploy_user: ${{ vars.DEPLOY_USER }}
       deploy_port: ${{ fromJSON(vars.DEPLOY_PORT) }}
@@ -45,7 +42,8 @@ jobs:
     secrets:
       DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
       DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}
-      GIT_REGISTRY_TOKEN: ${{ secrets.GIT_REGISTRY_TOKEN }}
+      OCI_PULL_USERNAME: ${{ secrets.OCI_PULL_USERNAME }}
+      OCI_PULL_TOKEN: ${{ secrets.OCI_PULL_TOKEN }}
 `),
 	}
 }

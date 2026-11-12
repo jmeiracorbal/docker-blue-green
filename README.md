@@ -65,7 +65,7 @@ The initializer does not start containers. It rejects configurations that cannot
 
 A published GitHub Release builds every application service with a `build` definition in `deploy/compose.yml`. The images are pushed to the configured OCI registry with the release tag. Each resulting image digest is uploaded as a workflow artifact for later deployment.
 
-Set these repository or environment variables in GitHub Actions: `REGISTRY_URL` (registry host), `REGISTRY_REPOSITORY` (repository/image prefix), and `REGISTRY_USERNAME`. Add the secret `GIT_REGISTRY_TOKEN` with permission to push to that registry. The registry can be GHCR or any compatible OCI registry.
+Set `OCI_IMAGE_PREFIX` to the complete image destination, including the OCI registry hostname and repository prefix (for example, `registry.example.com/team/project` or `ghcr.io/team/project`). No registry is selected automatically. Set `OCI_PUSH_USERNAME` for the publishing account and `GIT_REGISTRY_TOKEN` as a secret with image-push permissions.
 
 The generated workflow calls the shared publisher at a fixed commit for reproducibility. Publishing does not require deployment credentials. Once remote deployment is enabled and configured, the release workflow can deploy the published image digests.
 
@@ -80,8 +80,8 @@ bluegreen deploy --dir . --release release.json --env-file .env
 bluegreen rollback --dir . --project myapp --env-file .env
 ```
 
-The reusable remote workflow transfers only the deployment bundle, a pinned Linux CLI binary, the image-digest manifest and the runtime environment. It requires the repository variables `DEPLOY_PROJECT`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT`, `DEPLOY_SSH_KNOWN_HOSTS`, plus the registry variables above. Set `DEPLOY_ENABLED=true` to enable remote deployment after publishing a release.
+The reusable remote workflow transfers the deployment bundle, a pinned Linux CLI binary, the image-digest manifest and the runtime environment. It uses `DEPLOY_PROJECT`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT` and `DEPLOY_SSH_KNOWN_HOSTS`; set `DEPLOY_ENABLED=true` to enable remote deployment. The deployment determines the registry from the immutable image references in the release manifest, without separate registry destination variables.
 
-Provide the secrets `DEPLOY_SSH_PRIVATE_KEY`, `DEPLOY_ENV` and `GIT_REGISTRY_TOKEN`. `DEPLOY_ENV` contains the environment consumed by the remote Compose files; it is stored with restricted permissions on the server. No cloud-provider-specific identifiers are required.
+Provide `DEPLOY_SSH_PRIVATE_KEY` and `DEPLOY_ENV` as secrets. If the published images are private, also configure `OCI_PULL_USERNAME` and `OCI_PULL_TOKEN` as secrets with read-only registry access; public images require neither. `DEPLOY_ENV` contains the environment consumed by the remote Compose files and is stored with restricted permissions. No cloud-provider-specific identifiers are required.
 
 The remote workflow runs over verified SSH. Shared infrastructure remains up while the inactive application slot is prepared, then Caddy is reloaded only after the new containers pass their healthchecks. The previous slot is preserved for rollback. A full server-level end-to-end test must be performed before using the workflow for production traffic.
