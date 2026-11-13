@@ -90,6 +90,8 @@ type Controller struct {
 	WaitTimeout time.Duration
 	SecretResolver SecretResolver
 	SecretOverlay string
+	Automatic bool
+	ExpectedActiveHash string
 }
 
 var projectPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
@@ -390,6 +392,11 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 	s, err := readState(dir)
 	if err != nil {
 		return err
+	}
+	// Reconciliation is deliberately scoped to the active release observed
+	// before acquiring the lock. Concurrent deploys/rollbacks take precedence.
+	if c.Automatic && (s.AutoReconcilePaused || s.ActiveHash != c.ExpectedActiveHash) {
+		return nil
 	}
 	snapshot, err := c.loadSecrets(ctx, root, r)
 	if err != nil { return fmt.Errorf("resolve OpenBao secrets: %w", err) }

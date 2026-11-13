@@ -28,5 +28,7 @@ func (c Controller) ReconcileSecrets(ctx context.Context, project string) error 
         Project:project, Version:state.ActiveVersion,
         Images:state.ActiveImages, Routes:state.ActiveRoutes,
     }
+    c.Automatic = true
+    c.ExpectedActiveHash = state.ActiveHash
     return c.Deploy(ctx,release)
 }

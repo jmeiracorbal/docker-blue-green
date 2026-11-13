@@ -128,3 +128,17 @@ func TestReconcileRejectsUninitializedProject(t *testing.T) {
         t.Fatal("accepted reconciliation without initial deployment")
     }
 }
+
+func TestAutomaticReconcilerWillNotOverrideConcurrentDeploy(t *testing.T) {
+    root:=testRoot(t)
+    openbaoFixture(t,root)
+    runner:=&fakeRunner{}
+    c:=Controller{Root:root,Runner:runner,SecretResolver:secretResolver(1)}
+    ctx:=context.Background()
+    if err:=c.Deploy(ctx,release("v1"));err!=nil{t.Fatal(err)}
+    calls:=len(runner.calls)
+    c.Automatic=true
+    c.ExpectedActiveHash="stale-hash"
+    if err:=c.Deploy(ctx,release("v1"));err!=nil{t.Fatal(err)}
+    if len(runner.calls)!=calls{t.Fatal("automatic reconciliation overrode a newer deployment")}
+}
