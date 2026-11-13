@@ -224,11 +224,12 @@ listener "unix" {
     })
     probe:=func(){
         t.Helper()
-        transport:=&http.Transport{TLSClientConfig:&tls.Config{InsecureSkipVerify:true}}
+        transport:=&http.Transport{TLSClientConfig:&tls.Config{ServerName:"app.localhost", InsecureSkipVerify:true}}
         defer transport.CloseIdleConnections()
         httpClient:=&http.Client{Transport:transport,Timeout:3*time.Second}
         address:=fmt.Sprintf("https://127.0.0.1:%d/",httpsPort)
         deadline:=time.Now().Add(30*time.Second)
+        var lastErr error
         for time.Now().Before(deadline){
             request,_:=http.NewRequestWithContext(ctx,http.MethodGet,address,nil)
             request.Host="app.localhost"
@@ -236,10 +237,13 @@ listener "unix" {
             if err==nil{
                 response.Body.Close()
                 if response.StatusCode==http.StatusOK{return}
+                lastErr=fmt.Errorf("HTTP %d",response.StatusCode)
+            }else{
+                lastErr=err
             }
             time.Sleep(400*time.Millisecond)
         }
-        t.Fatalf("Caddy could not route to the active application")
+        t.Fatalf("Caddy could not route to the active application: %v",lastErr)
     }
     slotSecret:=func(slot string)string {
         t.Helper()
