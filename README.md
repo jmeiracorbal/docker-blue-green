@@ -205,3 +205,17 @@ Snapshots live under `.bluegreen/secrets/` on the Docker host, not in Git or Git
 The CLI-provisioned systemd timer checks OpenBao every five minutes and invokes `bluegreen secrets reconcile` against the **currently active release**. It never deploys the latest published release automatically, nor does a secret-only rotation require registry pull credentials when its immutable image is already present locally. After an explicit rollback, the engine pauses automatic reconciliation until the next manually initiated successful deployment, avoiding automatic reapplication of the rolled-back secret version. A manual `bluegreen deploy` still checks secret versions immediately.
 
 Automatic Ansible installation of Docker, Compose, and OpenBao host prerequisites is a separate concern and is not yet implemented.
+
+### Reproducible real OpenBao integration test
+
+The repository includes a minimal Docker Compose application in [`examples/openbao-demo/`](examples/openbao-demo/) and a separate [real OpenBao integration workflow](.github/workflows/test-openbao.yml).
+
+On a disposable **Ubuntu/Linux** environment with Go 1.23+, Docker Engine/Compose v2 and permission to create a restricted directory under `/run/bluegreen` (the test uses passwordless `sudo` when not running as root), run from the repository root:
+
+```bash
+BLUEGREEN_REAL_OPENBAO=1 go test -v -timeout 10m ./internal/deploy -run '^TestRealOpenBaoBlueGreen$'
+```
+
+The test starts an ephemeral OpenBao **development-mode** server, provisions a KV v2 mount and a project-scoped AppRole, starts an authenticated Unix-socket proxy, and exercises the public CLI to list KV paths, discover field names, select and check a secret. It deploys the example application through Docker Compose and Caddy, verifies the mounted secret inside the Blue container, updates the KV value, reconciles the Green container, and verifies rollback restores the previous secret version. A forbidden cross-project KV read is also tested. The test removes its containers and temporary files.
+
+**Testing scope:** OpenBao's development mode is insecure and must never be used in production. The integration test launches the proxy directly rather than installing the production systemd unit; `bluegreen secrets setup`, production TLS trust, and deployment against a separately provisioned OpenBao server require host-specific validation.
