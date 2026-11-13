@@ -82,3 +82,13 @@ func TestRejectsRoutesOutsideApplicationCompose(t *testing.T) {
     cfg.Routes[0].Service="api"
     if err:=cfg.ValidateApplicationServices(root);err!=nil{t.Fatal(err)}
 }
+
+func TestRejectLegacySplitConfiguration(t *testing.T) {
+    root:=t.TempDir()
+    if err:=Save(root,Document{Version:1,Project:"demo"});err!=nil{t.Fatal(err)}
+    legacy:=filepath.Join(root,"deploy","secrets.json")
+    if err:=os.WriteFile(legacy,[]byte("{}"),0600);err!=nil{t.Fatal(err)}
+    if _,err:=Load(root);err==nil || !strings.Contains(err.Error(),"obsolete"){
+        t.Fatalf("silently ignored old secrets.json: %v",err)
+    }
+}

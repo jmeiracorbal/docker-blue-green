@@ -82,7 +82,7 @@ routes:
     port: 8000
 ```
 
-The file also contains optional OpenBao KV references. Docker Compose retains service definitions, persistent volumes and networking. The immutable release JSON remains a runtime input (image digests and version), and the engine rejects a release whose project or routes differ from the YAML contract. `bluegreen config export` emits only project and routes as JSON for reusable CI workflows; it never includes secret references or values.
+The file also contains optional OpenBao KV references. Legacy `deploy/routes.json` and `deploy/secrets.json` are rejected rather than silently ignored: move their configuration into the new YAML before deploying. Docker Compose retains service definitions, persistent volumes and networking. The immutable release JSON remains a runtime input (image digests and version), and the engine rejects a release whose project or routes differ from the YAML contract. `bluegreen config export` emits only project and routes as JSON for reusable CI workflows; it never includes secret references or values.
 
 Set the environment variables required by the generated Compose files. Application images use per-service variables such as `API_IMAGE` so that releases can provide immutable image references. Host-published application ports are converted into container-only exposed ports; shared infrastructure remains outside the Blue/Green slots.
 

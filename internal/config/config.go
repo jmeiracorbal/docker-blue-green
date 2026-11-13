@@ -70,6 +70,16 @@ func Parse(data []byte) (Document, error) {
 }
 
 func Load(root string) (Document, error) {
+    // Fail closed when previous split configuration exists. Ignoring an old
+    // secrets.json could silently launch containers without expected secrets.
+    for _,legacy:=range []string{"routes.json","secrets.json"} {
+        file:=filepath.Join(root,"deploy",legacy)
+        if _,err:=os.Lstat(file);err==nil{
+            return Document{},fmt.Errorf("obsolete deployment configuration %s; move its settings into deploy/bluegreen.yml",file)
+        }else if !errors.Is(err,os.ErrNotExist){
+            return Document{},err
+        }
+    }
     data, err := os.ReadFile(Path(root))
     if err != nil {
         return Document{}, fmt.Errorf("read deploy/bluegreen.yml: %w", err)
