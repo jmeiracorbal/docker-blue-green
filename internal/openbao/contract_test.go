@@ -2,6 +2,7 @@ package openbao
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"os"

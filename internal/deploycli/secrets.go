@@ -108,6 +108,7 @@ func addSecretReference(args []string,out io.Writer) error {
     }
     cfg.OpenBao.Secrets=append(cfg.OpenBao.Secrets,ref)
     if err:=cfg.Validate(false);err!=nil{return err}
+    if err:=cfg.ValidateApplicationServices(*dir);err!=nil{return err}
     if _,err:=os.Stat(config.Path(*dir));err!=nil{return err}
     if err:=config.Save(*dir,cfg);err!=nil{return err}
     _,err=fmt.Fprintf(out,"OpenBao secret reference configured: %s/%s\n",ref.Service,ref.Name)

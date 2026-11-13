@@ -38,6 +38,7 @@ func TestSecretCheckRejectsSocketFlag(t *testing.T) {
 
 func TestSecretAddCreatesAndExtendsManifest(t *testing.T) {
     root:=t.TempDir()
+    prepareProject(t,root,"api")
     if err:=config.Save(root,config.Document{Version:1,Project:"myapp",
         Routes:[]config.Route{{Host:"api.example.com",Service:"api",Port:80}},
     });err!=nil{t.Fatal(err)}
