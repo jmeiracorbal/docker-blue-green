@@ -1,0 +1,17 @@
+name: "${PROJECT_NAME}-${DEPLOYMENT_SLOT}"
+services:
+  app:
+    image: "${APPLICATION_IMAGE}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/"]
+      interval: 2s
+      retries: 15
+      start_period: 5s
+    networks:
+      edge:
+        aliases:
+          - "${PROJECT_NAME}-${DEPLOYMENT_SLOT}-app"
+networks:
+  edge:
+    external: true
+    name: "${DEPLOY_NETWORK}"

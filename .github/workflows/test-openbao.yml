@@ -1,0 +1,25 @@
+name: Test real OpenBao integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  openbao:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Run real OpenBao, AppRole, Proxy and Docker Blue-Green integration
+        env:
+          BLUEGREEN_REAL_OPENBAO: "1"
+        run: go test -v -timeout 10m ./internal/deploy -run '^TestRealOpenBaoBlueGreen$'
