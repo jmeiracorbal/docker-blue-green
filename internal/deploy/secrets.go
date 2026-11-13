@@ -13,6 +13,7 @@ import (
     "sort"
     "strconv"
 
+    "github.com/jmeiracorbal/docker-blue-green/internal/config"
     "github.com/jmeiracorbal/docker-blue-green/internal/openbao"
 )
 
@@ -27,12 +28,12 @@ type secretSnapshot struct {
 }
 
 func (c Controller) loadSecrets(ctx context.Context, root string, r Release) (*secretSnapshot, error) {
-    manifestPath := filepath.Join(root,"deploy","secrets.json")
-    manifestBytes, err := os.ReadFile(manifestPath)
-    if errors.Is(err, os.ErrNotExist) { return nil,nil }
-    if err != nil { return nil,fmt.Errorf("read OpenBao references: %w",err) }
-    manifest, err := openbao.Parse(manifestBytes,r.Project)
-    if err != nil { return nil,err }
+    cfg, err := config.Load(root)
+    if err != nil { return nil, err }
+    if err := cfg.Validate(true); err != nil { return nil, err }
+    if cfg.Project != r.Project { return nil, errors.New("release project does not match deploy/bluegreen.yml") }
+    manifest, enabled := cfg.Secrets()
+    if !enabled { return nil, nil }
     for _, ref := range manifest.Secrets {
         if _, exists := r.Images[ref.Service]; !exists {
             return nil,fmt.Errorf("OpenBao reference targets unknown application service %q",ref.Service)

@@ -26,6 +26,9 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/bluegreen-smoke"
           ./bluegreen init --dir "$RUNNER_TEMP/bluegreen-smoke"
+          ./bluegreen configure --dir "$RUNNER_TEMP/bluegreen-smoke" --project smoke --host app.localhost --service app --port 8080
+          ./bluegreen config check --dir "$RUNNER_TEMP/bluegreen-smoke"
+          ./bluegreen config export --dir "$RUNNER_TEMP/bluegreen-smoke" | jq -e '.project == "smoke" and .routes[0].service == "app"'
           test -s "$RUNNER_TEMP/bluegreen-smoke/.github/workflows/release.yml"
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 "$RUNNER_TEMP/bluegreen-smoke/.github/workflows/release.yml"
           docker compose -f "$RUNNER_TEMP/bluegreen-smoke/deploy/compose.yml" config --no-interpolate --quiet

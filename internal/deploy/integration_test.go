@@ -117,8 +117,8 @@ volumes:
 		}
 	}
 	t.Setenv("PROJECT_NAME", name)
-	secretDoc := `{"mount":"kv","secrets":[{"service":"app","name":"database_password","path":"db","field":"password"}]}`
-	if err := os.WriteFile(filepath.Join(root, "deploy", "secrets.json"), []byte(secretDoc), 0600); err != nil { t.Fatal(err) }
+    configYAML:=fmt.Sprintf("version: 1\nproject: %s\nroutes:\n  - host: app.localhost\n    service: app\n    port: 80\nopenbao:\n  mount: kv\n  secrets:\n    - service: app\n      name: database_password\n      path: db\n      field: password\n",name)
+    if err:=os.WriteFile(filepath.Join(root,"deploy","bluegreen.yml"),[]byte(configYAML),0644);err!=nil{t.Fatal(err)}
 	secretVersion := 1
 	c := Controller{Root: root, WaitTimeout: 90 * time.Second}
 	c.SecretResolver = func(_ context.Context, _ string, m openbao.Manifest) ([]openbao.Resolved,error) {

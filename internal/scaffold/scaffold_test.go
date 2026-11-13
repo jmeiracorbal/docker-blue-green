@@ -83,7 +83,7 @@ func TestNoSourceGeneratesBasicScaffold(t *testing.T) {
 	if !strings.Contains(find(files, "deploy/compose.yml"), "${APPLICATION_IMAGE}") {
 		t.Fatal("missing default app")
 	}
-	if !strings.Contains(find(files, "deploy/routes.json"), `"routes": []`) { t.Fatal("missing route manifest") }
+	if !strings.Contains(find(files, "deploy/bluegreen.yml"), "routes: []") { t.Fatal("missing route manifest") }
 	if !strings.Contains(find(files, "deploy/infrastructure/compose.yml"), "caddy:") {
 		t.Fatal("missing caddy")
 	}

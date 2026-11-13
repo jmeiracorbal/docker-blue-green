@@ -3,9 +3,8 @@ package deploy
 import (
     "context"
     "errors"
-    "fmt"
-    "os"
-    "path/filepath"
+
+    "github.com/jmeiracorbal/docker-blue-green/internal/config"
 )
 
 // ReconcileSecrets checks secret versions for the release currently active on
@@ -21,9 +20,10 @@ func (c Controller) ReconcileSecrets(ctx context.Context, project string) error 
     if state.ActiveVersion == "" || len(state.ActiveImages)==0 || len(state.ActiveRoutes)==0 {
         return errors.New("cannot reconcile before an initial deployment")
     }
-    if _, err:=os.Stat(filepath.Join(root,"deploy","secrets.json"));err!=nil {
-        return fmt.Errorf("OpenBao project has no secret reference manifest: %w",err)
-    }
+    cfg, err := config.Load(root)
+    if err != nil { return err }
+    if cfg.Project != project { return errors.New("reconciliation project differs from deploy/bluegreen.yml") }
+    if _, ok := cfg.Secrets(); !ok { return errors.New("OpenBao project has no secret references") }
     release:=Release{
         Project:project, Version:state.ActiveVersion,
         Images:state.ActiveImages, Routes:state.ActiveRoutes,

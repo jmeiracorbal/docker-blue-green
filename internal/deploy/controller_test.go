@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+    "github.com/jmeiracorbal/docker-blue-green/internal/config"
 )
 
 type fakeRunner struct {
@@ -48,10 +50,14 @@ func testRoot(t *testing.T) string {
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(target, []byte("services: {}\n"), 0644); err != nil {
-			t.Fatal(err)
-		}
+        content := "services: {}\n"
+        if p == "deploy/compose.yml" { content = "services:\n  api:\n    image: nginx:1.27-alpine\n" }
+        if err := os.WriteFile(target, []byte(content), 0644); err != nil {
+            t.Fatal(err)
+        }
 	}
+    cfg := config.Document{Version:1,Project:"demo",Routes:[]config.Route{{Host:"api.example.com",Service:"api",Port:8000}}}
+    if err := config.Save(root,cfg); err != nil {t.Fatal(err)}
 	return root
 }
 func release(version string) Release {
@@ -192,4 +198,17 @@ func TestReadManifestTrailingData(t *testing.T) {
 	if _, err := ParseRelease(p); err == nil {
 		t.Fatal("accepted trailing data")
 	}
+}
+
+func TestDeployRejectsReleaseConfigurationDrift(t *testing.T) {
+    root:=testRoot(t)
+    runner:=&fakeRunner{}
+    c:=Controller{Root:root,Runner:runner}
+    wrongProject:=release("v1")
+    wrongProject.Project="different"
+    if err:=c.Deploy(context.Background(),wrongProject);err==nil{t.Fatal("accepted wrong project identity")}
+    wrongRoute:=release("v1")
+    wrongRoute.Routes[0].Host="other.example.com"
+    if err:=c.Deploy(context.Background(),wrongRoute);err==nil{t.Fatal("accepted route drift")}
+    if len(runner.calls)!=0{t.Fatal("Docker was called for mismatched configuration")}
 }

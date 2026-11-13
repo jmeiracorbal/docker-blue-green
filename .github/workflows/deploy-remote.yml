@@ -76,21 +76,24 @@ jobs:
           [[ "$DEPLOY_PROJECT" =~ ^[a-z][a-z0-9_-]{0,62}$ ]] || exit 1
           [[ "$DEPLOY_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || exit 1
           [[ "$ENGINE_REF" =~ ^[0-9a-f]{40}$ ]] || exit 1
-          jq -e '.routes | type == "array" and length > 0' deploy/routes.json >/dev/null
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen@$ENGINE_REF"
+          cp "$(go env GOPATH)/bin/bluegreen" .bluegreen-dist/bluegreen
+          .bluegreen-dist/bluegreen config export --dir . > .bluegreen-dist/project.json
+          jq -e --arg project "$DEPLOY_PROJECT" '
+            .project == $project and (.routes | type == "array" and length > 0)
+          ' .bluegreen-dist/project.json >/dev/null
           jq -s 'reduce .[] as $item ({}; .[$item.service] = $item.image)' \
             .bluegreen-dist/images/image-*/image.json > .bluegreen-dist/images.json
           jq -n --arg project "$DEPLOY_PROJECT" --arg version "$DEPLOY_VERSION" \
             --slurpfile images .bluegreen-dist/images.json \
-            --slurpfile routes deploy/routes.json \
-            '{project: $project, version: $version, images: $images[0], routes: $routes[0].routes}' \
+            --slurpfile config .bluegreen-dist/project.json \
+            '{project: $project, version: $version, images: $images[0], routes: $config[0].routes}' \
             > .bluegreen-dist/release.json
           jq -e '
             (.images | type == "object" and length > 0) and
             ([.images[] | (type == "string" and test("^[a-z0-9][a-z0-9.:-]*/[a-z0-9][a-z0-9/_.-]*@sha256:[a-f0-9]{64}$"))] | all)
           ' .bluegreen-dist/release.json >/dev/null
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-            go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen@$ENGINE_REF"
-          cp "$(go env GOPATH)/bin/bluegreen" .bluegreen-dist/bluegreen
           tar -czf .bluegreen-dist/deploy.tgz deploy
 
       - name: Configure verified SSH connection

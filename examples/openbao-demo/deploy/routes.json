@@ -1,5 +1,0 @@
-{
-  "routes": [
-    {"host": "app.localhost", "service": "app", "port": 80}
-  ]
-}

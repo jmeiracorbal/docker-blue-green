@@ -124,7 +124,7 @@ Requires=bluegreen-openbao-%s.service
 After=bluegreen-openbao-%s.service docker.service
 Wants=docker.service
 ConditionPathExists=%s/.bluegreen/state.json
-ConditionPathExists=%s/deploy/secrets.json
+ConditionPathExists=%s/deploy/bluegreen.yml
 ConditionPathExists=%s/.env
 ConditionPathExists=%s/bluegreen
 

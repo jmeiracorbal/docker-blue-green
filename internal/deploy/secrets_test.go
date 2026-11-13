@@ -8,13 +8,18 @@ import (
     "strings"
     "testing"
 
+    "github.com/jmeiracorbal/docker-blue-green/internal/config"
     "github.com/jmeiracorbal/docker-blue-green/internal/openbao"
 )
 
 func openbaoFixture(t *testing.T, root string) {
     t.Helper()
-    doc:=`{"mount":"kv","secrets":[{"service":"api","name":"database_password","path":"db","field":"password"}]}`
-    if err:=os.WriteFile(filepath.Join(root,"deploy","secrets.json"),[]byte(doc),0600);err!=nil {t.Fatal(err)}
+    cfg,err:=config.Load(root)
+    if err!=nil{t.Fatal(err)}
+    cfg.OpenBao=&config.OpenBao{Mount:"kv",Secrets:[]openbao.Reference{{
+        Service:"api",Name:"database_password",Path:"db",Field:"password",
+    }}}
+    if err:=config.Save(root,cfg);err!=nil{t.Fatal(err)}
 }
 
 func secretResolver(version int) SecretResolver {

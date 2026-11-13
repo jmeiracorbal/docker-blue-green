@@ -19,6 +19,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+    "github.com/jmeiracorbal/docker-blue-green/internal/config"
 )
 
 type Route struct {
@@ -384,6 +386,20 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 	if err != nil {
 		return err
 	}
+    cfg, err := config.Load(root)
+    if err != nil { return err }
+    if err := cfg.Validate(true); err != nil { return err }
+    if err := cfg.ValidateApplicationServices(root); err != nil { return err }
+    if cfg.Project != r.Project { return errors.New("release project differs from deploy/bluegreen.yml") }
+    if len(cfg.Routes) != len(r.Routes) { return errors.New("release routes differ from deploy/bluegreen.yml") }
+    permitted := make(map[string]config.Route,len(cfg.Routes))
+    for _, route := range cfg.Routes { permitted[strings.ToLower(route.Host)] = route }
+    for _, route := range r.Routes {
+        want, ok := permitted[strings.ToLower(route.Host)]
+        if !ok || route.Service != want.Service || route.Port != want.Port {
+            return errors.New("release routes differ from deploy/bluegreen.yml")
+        }
+    }
 	unlock, err := c.lock(dir)
 	if err != nil {
 		return err
