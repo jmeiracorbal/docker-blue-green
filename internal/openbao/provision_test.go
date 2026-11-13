@@ -19,7 +19,7 @@ func TestRenderProjectProxy(t *testing.T) {
         `address = "https://openbao.internal:8200"`,
         `use_auto_auth_token = "force"`,
         "remove_secret_id_file_after_reading = false",
-        "socket_mode = "0600"",
+        `socket_mode = "0600"`,
     } {
         if !strings.Contains(cfg, want) { t.Errorf("config is missing %q", want) }
     }

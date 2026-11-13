@@ -34,8 +34,7 @@ func TestSecretCheckRejectsSocketFlag(t *testing.T) {
 func TestSecretAddCreatesAndExtendsManifest(t *testing.T) {
     root:=t.TempDir()
     if err:=os.MkdirAll(filepath.Join(root,"deploy"),0700);err!=nil {t.Fatal(err)}
-    if err:=os.WriteFile(filepath.Join(root,"deploy","compose.yml"),[]byte("services: {}
-"),0644);err!=nil{t.Fatal(err)}
+    if err:=os.WriteFile(filepath.Join(root,"deploy","compose.yml"),[]byte(`services: {}`),0644);err!=nil{t.Fatal(err)}
     args:=[]string{"add","--dir",root,"--project","myapp","--mount","kv","--service","api","--name","database_password","--path","database","--field","password"}
     var out bytes.Buffer
     if err:=checkSecrets(args,&out);err!=nil{t.Fatal(err)}

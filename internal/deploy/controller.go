@@ -44,6 +44,10 @@ type State struct {
 	PreviousRoutes  []Route           `json:"previous_routes,omitempty"`
 	ActiveImages    map[string]string `json:"active_images,omitempty"`
 	PreviousImages  map[string]string `json:"previous_images,omitempty"`
+	ActiveSecretRevision string `json:"active_secret_revision,omitempty"`
+	PreviousSecretRevision string `json:"previous_secret_revision,omitempty"`
+	ActiveSecretOverlay string `json:"active_secret_overlay,omitempty"`
+	PreviousSecretOverlay string `json:"previous_secret_overlay,omitempty"`
 	Phase           string            `json:"phase,omitempty"`
 	PendingSlot     string            `json:"pending_slot,omitempty"`
 	PendingVersion  string            `json:"pending_version,omitempty"`
@@ -82,6 +86,8 @@ type Controller struct {
 	EnvFile     string
 	Runner      Runner
 	WaitTimeout time.Duration
+	SecretResolver SecretResolver
+	SecretOverlay string
 }
 
 var projectPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
@@ -195,6 +201,9 @@ func (c Controller) composeArgs(path string, args ...string) []string {
 		opts = append(opts, "--env-file", c.EnvFile)
 	}
 	opts = append(opts, "-f", path)
+	if c.SecretOverlay != "" && filepath.Base(path) == "compose.yml" && filepath.Base(filepath.Dir(path)) == "deploy" {
+		opts = append(opts, "-f", c.SecretOverlay)
+	}
 	return append(opts, args...)
 }
 func (c Controller) run(ctx context.Context, root, path string, r Release, slot string, args ...string) error {
@@ -380,7 +389,10 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 	if err != nil {
 		return err
 	}
-	if s.ActiveHash == hash(r) && s.ActiveVersion == r.Version && s.Phase == "" {
+	snapshot, err := c.loadSecrets(ctx, root, r)
+	if err != nil { return fmt.Errorf("resolve OpenBao secrets: %w", err) }
+	currentHash := releaseHashWithSecrets(r, snapshot)
+	if s.ActiveHash == currentHash && s.ActiveVersion == r.Version && s.Phase == "" {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(routeFile(root, r.Project)), 0750); err != nil {
@@ -393,6 +405,9 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 		return err
 	}
 	slot := otherSlot(s.ActiveSlot)
+	overlay, err := stageSecretOverlay(root, slot, snapshot)
+	if err != nil { return fmt.Errorf("stage OpenBao secrets: %w", err) }
+	c.SecretOverlay = overlay
 	s.Phase = "preparing"
 	s.PendingSlot = slot
 	s.PendingVersion = r.Version
@@ -416,10 +431,13 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 	if err = c.setRoutes(ctx, root, infra, r, slot, r.Routes); err != nil {
 		return fmt.Errorf("switch Caddy traffic: %w", err)
 	}
-	next := State{ActiveSlot: slot, ActiveVersion: r.Version, ActiveHash: hash(r), ActiveRoutes: r.Routes, PreviousSlot: s.ActiveSlot, PreviousVersion: s.ActiveVersion, PreviousHash: s.ActiveHash, PreviousRoutes: s.ActiveRoutes, ActiveImages: r.Images, PreviousImages: s.ActiveImages}
+	next := State{ActiveSlot: slot, ActiveVersion: r.Version, ActiveHash: currentHash, ActiveRoutes: r.Routes, PreviousSlot: s.ActiveSlot, PreviousVersion: s.ActiveVersion, PreviousHash: s.ActiveHash, PreviousRoutes: s.ActiveRoutes, ActiveImages: r.Images, PreviousImages: s.ActiveImages, ActiveSecretOverlay: overlay, PreviousSecretOverlay: s.ActiveSecretOverlay}
+	if snapshot != nil { next.ActiveSecretRevision = snapshot.revision }
+	next.PreviousSecretRevision = s.ActiveSecretRevision
 	if err = saveState(dir, next); err != nil {
 		return fmt.Errorf("Caddy switched but state persistence failed; next invocation will reconcile: %w", err)
 	}
+	if err := pruneSnapshots(root, next); err != nil { return fmt.Errorf("deployed but could not prune stale snapshots: %w", err) }
 	return nil
 }
 func (c Controller) Rollback(ctx context.Context, project string) error {
@@ -448,12 +466,13 @@ func (c Controller) Rollback(ctx context.Context, project string) error {
 	}
 	// Previous slot remains running. Require all of its containers to be healthy.
 	previous := Release{Project: project, Version: s.PreviousVersion, Images: s.PreviousImages, Routes: s.PreviousRoutes}
+	c.SecretOverlay = s.PreviousSecretOverlay
 	if err := c.verifyHealth(ctx, root, app, previous, s.PreviousSlot); err != nil {
 		return fmt.Errorf("previous release is unhealthy: %w", err)
 	}
 	if err = c.setRoutes(ctx, root, infra, previous, s.PreviousSlot, s.PreviousRoutes); err != nil {
 		return err
 	}
-	restored := State{ActiveSlot: s.PreviousSlot, ActiveVersion: s.PreviousVersion, ActiveHash: s.PreviousHash, ActiveRoutes: s.PreviousRoutes, PreviousSlot: s.ActiveSlot, PreviousVersion: s.ActiveVersion, PreviousHash: s.ActiveHash, PreviousRoutes: s.ActiveRoutes, ActiveImages: s.PreviousImages, PreviousImages: s.ActiveImages}
+	restored := State{ActiveSlot: s.PreviousSlot, ActiveVersion: s.PreviousVersion, ActiveHash: s.PreviousHash, ActiveRoutes: s.PreviousRoutes, PreviousSlot: s.ActiveSlot, PreviousVersion: s.ActiveVersion, PreviousHash: s.ActiveHash, PreviousRoutes: s.ActiveRoutes, ActiveImages: s.PreviousImages, PreviousImages: s.ActiveImages, ActiveSecretRevision: s.PreviousSecretRevision, PreviousSecretRevision: s.ActiveSecretRevision, ActiveSecretOverlay: s.PreviousSecretOverlay, PreviousSecretOverlay: s.ActiveSecretOverlay}
 	return saveState(dir, restored)
 }
