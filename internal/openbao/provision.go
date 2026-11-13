@@ -148,6 +148,12 @@ func ProvisionProxy(p ProxyProvision) error {
         }
         if err != nil && !errors.Is(err, os.ErrNotExist) { return err }
     }
+    // Parent directories contain no secrets. They must be traversable by
+    // the unprivileged service account; the per-project directory is private.
+    for _, parent := range []string{"/etc/bluegreen", "/etc/bluegreen/openbao"} {
+        if err := os.MkdirAll(parent, 0755); err != nil { return err }
+        if err := os.Chmod(parent, 0755); err != nil { return err }
+    }
     if err := os.MkdirAll(configDir, 0750); err != nil { return err }
     if err := os.Chown(configDir, 0, gid); err != nil { return err }
     if err := os.Chmod(configDir, 0750); err != nil { return err }

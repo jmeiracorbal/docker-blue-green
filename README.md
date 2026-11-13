@@ -17,6 +17,7 @@ Blue-Green deployment and rollback are available through the CLI. Production int
 
 - Go 1.23 or later (to build the CLI).
 - Docker Engine with Docker Compose v2 (to import an existing Compose project).
+- Optional OpenBao integration: an existing HTTPS OpenBao server, a scoped KV v2 AppRole identity, and the `bao` binary with systemd on the Linux Docker host.
 
 ## Installation
 
@@ -101,24 +102,60 @@ The reusable remote workflow transfers the deployment bundle, a pinned Linux CLI
 | `DEPLOY_PORT` | Variable | `22` | SSH port. |
 | `DEPLOY_USER` | Variable | `deploy` | SSH account used to run Docker commands. |
 | `DEPLOY_SSH_KNOWN_HOSTS` | Variable | `203.0.113.10 ssh-ed25519 AAAA…` | Verified SSH host-key entry in `known_hosts` format. The example is abbreviated, not a valid key. |
-| `DEPLOY_SSH_PRIVATE_KEY` | Secret | *(SSH private key)* | Private key used to authenticate to the deployment server. |
-| `DEPLOY_ENV` | Secret | `PROJECT_NAME=myapp` | Runtime environment contents required by the generated Compose files; may contain multiple newline-separated entries. |
+| `SERVER_SSH_PRIVATE_KEY` | Secret | *(SSH private key)* | Private key used to authenticate to the deployment server. |
 | `OCI_REGISTRY_PULL_USERNAME` | Secret (optional) | `ci-reader` | Account authorized to download private OCI images. |
 | `OCI_REGISTRY_PULL_TOKEN` | Secret (optional) | *(read-only registry token)* | Credential for downloading private OCI images. |
 
 The two `OCI_REGISTRY_PULL_*` secrets are required **only for private images**. For public images, leave both unset. The publisher's `OCI_REGISTRY_TOKEN` is not forwarded to the deployment server.
 
+The deployment server retains its own non-secret Compose `.env` file in the deployment working directory. GitHub Actions neither uploads nor overwrites it; `DEPLOY_ENV` is no longer a GitHub secret. Set network, Caddy and port variables in that server-side file. Application credentials belong in OpenBao.
+
 The deployment derives the registry hostname and exact image references from the release manifest; it does not need a second set of registry destination variables. No cloud-provider-specific identifiers are required.
 
 The remote workflow runs over verified SSH. Shared infrastructure remains up while the inactive application slot is prepared, then Caddy is reloaded only after the new containers pass their healthchecks. The previous slot is preserved for rollback. A full server-level end-to-end test must be performed before using the workflow for production traffic.
 
-## OpenBao proxy contract
+## OpenBao integration
 
-OpenBao support is opt-in. The OpenBao server may run on another host; a project-scoped **OpenBao Proxy** runs separately from application containers and Caddy. The Blue-Green CLI communicates with that proxy over an access-restricted Unix socket. Images do not need OpenBao Agent or a process supervisor.
+OpenBao is optional. The **OpenBao server** stores secrets centrally. An independent **OpenBao Proxy** runs as a Linux systemd service for each project, outside application containers. The CLI connects automatically through `/run/bluegreen/<project>/openbao.sock`; the socket, proxy credentials, and any supervisors are never mounted into the images.
 
-The proxy must be provisioned with automatic authentication (`api_proxy { use_auto_auth_token = "force" }`) and a **read-only, project-scoped** OpenBao policy. Neither its credentials nor its Unix socket may be mounted into application containers. For a deployment named `myapp`, the proxy identity should be limited to reading `kv/data/projects/myapp/*`; the server administrator owns the initial identity and policy provisioning.
+### Configure the proxy once through the CLI
 
-Only projects using OpenBao need a `deploy/secrets.json` file. This file declares **references, not values**:
+Prerequisites are `bao proxy`, systemd, a Linux deployment account, and an existing OpenBao AppRole identity with a read-only KV v2 policy limited to the project. Example OpenBao policy for project `myapp`:
+
+```hcl
+path "kv/data/projects/myapp/*" {
+  capabilities = ["read"]
+}
+```
+
+The OpenBao administrator supplies the AppRole identifiers in protected files on the host. Then run:
+
+```bash
+sudo bluegreen secrets configure \
+  --project myapp \
+  --server https://openbao.example.com:8200 \
+  --user deploy \
+  --role-id-file /secure/role_id \
+  --secret-id-file /secure/secret_id
+```
+
+The CLI installs project-scoped proxy configuration and credentials under `/etc/bluegreen/openbao/myapp/`, creates a systemd unit, and starts the proxy. Re-running with identical settings is idempotent; divergent configuration is rejected. Creating the AppRole and its policy in OpenBao remains an administrator-side prerequisite.
+
+### Declare secrets through the CLI
+
+After `bluegreen init`, run in the application repository:
+
+```bash
+bluegreen secrets add \
+  --project myapp \
+  --mount kv \
+  --service api \
+  --name database_password \
+  --path database \
+  --field password
+```
+
+This generates `deploy/secrets.json` containing **references only**:
 
 ```json
 {
@@ -134,14 +171,20 @@ Only projects using OpenBao need a `deploy/secrets.json` file. This file declare
 }
 ```
 
-The contract supports OpenBao KV v2. For project `myapp`, the above reference requests `GET /v1/kv/data/projects/myapp/database` through the local proxy and verifies that the `password` field contains a nonempty string. The `name` identifies the Docker Compose secret to provision for the named service in a later integration stage. Project scope is constructed by the CLI; it is not supplied as a free-form HTTP path.
-
-With an already running and provisioned proxy, validate the read contract using:
+Verify the references against the running proxy without specifying a socket:
 
 ```bash
-bluegreen secrets check --dir . --project myapp
+bluegreen secrets check --project myapp
 ```
 
-The command checks availability and access without printing or persisting secret values. The CLI derives the proxy endpoint from the validated project identifier: `/run/bluegreen/<project>/openbao.sock`. Server provisioning must expose the project's authenticated OpenBao Proxy at that exact Unix socket; there is no CLI socket flag, environment override, or fallback. OpenBao policies and Unix socket permissions remain mandatory security boundaries.
+The engine reads `kv/data/projects/myapp/database` through the project's OpenBao Proxy, without printing secret values.
 
-**Current scope:** this command validates references against a running OpenBao Proxy. Automatic provisioning of Compose secrets, credential rotation/reconciliation, removal of the existing `DEPLOY_ENV` workflow input, and server provisioning with Ansible are **not implemented yet**. The existing deployment mechanism is unchanged until those integrations are tested.
+### Delivery, rotation and rollback
+
+During `bluegreen deploy`, the engine resolves all required secrets before changing Docker infrastructure. It writes a project-private, versioned host snapshot and a Compose override. The configured application services receive the values as read-only files at `/run/secrets/<name>`, using Docker Compose secrets. Applications must support reading these files; Compose cannot inject their contents into an arbitrary running process's environment.
+
+KV v2 versions contribute to the release identity. On a subsequent deployment, changed secret versions cause the engine to prepare the inactive slot, check health and switch traffic; the previous slot keeps its earlier credentials for rollback.
+
+Snapshots live under `.bluegreen/secrets/` on the Docker host, not in Git or GitHub Actions. They remain on host disk to support restarts and rollback. Docker Compose uses bind mounts for file-backed secrets and does not support UID remapping for those mounts, so the snapshot directories are private while file permissions allow arbitrary container UIDs to read their assigned file mounts. Use host-level disk encryption and restrictive access permissions. Obsolete snapshots are pruned after successful switches.
+
+Secret reconciliation is triggered by `bluegreen deploy`; it is not a background polling service. Automated Ansible installation of host prerequisites is a separate concern and is not yet implemented.

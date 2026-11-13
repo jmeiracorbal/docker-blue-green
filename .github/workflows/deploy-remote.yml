@@ -32,9 +32,7 @@ on:
         required: true
         type: string
     secrets:
-      DEPLOY_SSH_PRIVATE_KEY:
-        required: true
-      DEPLOY_ENV:
+      SERVER_SSH_PRIVATE_KEY:
         required: true
       OCI_REGISTRY_PULL_USERNAME:
         required: false
@@ -71,7 +69,6 @@ jobs:
         env:
           DEPLOY_PROJECT: ${{ inputs.project }}
           DEPLOY_VERSION: ${{ inputs.version }}
-          DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}
           ENGINE_REF: ${{ inputs.engine_ref }}
         shell: bash
         run: |
@@ -79,7 +76,6 @@ jobs:
           [[ "$DEPLOY_PROJECT" =~ ^[a-z][a-z0-9_-]{0,62}$ ]] || exit 1
           [[ "$DEPLOY_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || exit 1
           [[ "$ENGINE_REF" =~ ^[0-9a-f]{40}$ ]] || exit 1
-          test -n "$DEPLOY_ENV"
           jq -e '.routes | type == "array" and length > 0' deploy/routes.json >/dev/null
           jq -s 'reduce .[] as $item ({}; .[$item.service] = $item.image)' \
             .bluegreen-dist/images/image-*/image.json > .bluegreen-dist/images.json
@@ -95,13 +91,11 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
             go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen@$ENGINE_REF"
           cp "$(go env GOPATH)/bin/bluegreen" .bluegreen-dist/bluegreen
-          printf '%s' "$DEPLOY_ENV" > .bluegreen-dist/runtime.env
-          chmod 600 .bluegreen-dist/runtime.env
           tar -czf .bluegreen-dist/deploy.tgz deploy
 
       - name: Configure verified SSH connection
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ inputs.deploy_ssh_known_hosts }}
         shell: bash
         run: |
@@ -139,7 +133,7 @@ jobs:
             "$SSH_USER@$SSH_HOST" "install -d -m 700 '$remote_dir/.incoming'"
           scp -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -P "$SSH_PORT" \
             .bluegreen-dist/deploy.tgz .bluegreen-dist/bluegreen \
-            .bluegreen-dist/runtime.env .bluegreen-dist/release.json \
+            .bluegreen-dist/release.json \
             "$SSH_USER@$SSH_HOST:$remote_dir/.incoming/"
           if [[ -n "$OCI_REGISTRY_PULL_TOKEN" ]]; then
             printf '%s' "$OCI_REGISTRY_PULL_TOKEN" | \
@@ -149,7 +143,7 @@ jobs:
           fi
           ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \
-            "cd '$remote_dir' && umask 077 && tar -xzf .incoming/deploy.tgz && install -m 700 .incoming/bluegreen ./bluegreen && install -m 600 .incoming/runtime.env ./.env && install -m 600 .incoming/release.json ./release.json && DOCKER_CONFIG=\$PWD/.registry ./bluegreen deploy --dir . --release release.json --env-file .env"
+            "cd '$remote_dir' && umask 077 && tar -xzf .incoming/deploy.tgz && install -m 700 .incoming/bluegreen ./bluegreen && test -f .env && install -m 600 .incoming/release.json ./release.json && DOCKER_CONFIG=\$PWD/.registry ./bluegreen deploy --dir . --release release.json --env-file .env"
 
       - name: Remove temporary remote credentials
         if: always()
@@ -163,5 +157,5 @@ jobs:
           if [[ -f "$HOME/.ssh/bluegreen" ]]; then
             ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
               "$SSH_USER@$SSH_HOST" \
-              "cd '.local/share/docker-blue-green/$DEPLOY_PROJECT' && rm -f .incoming/deploy.tgz .incoming/bluegreen .incoming/runtime.env .incoming/release.json && rm -rf .registry" || true
+              "cd '.local/share/docker-blue-green/$DEPLOY_PROJECT' && rm -f .incoming/deploy.tgz .incoming/bluegreen .incoming/release.json && rm -rf .registry" || true
           fi

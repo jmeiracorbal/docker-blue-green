@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+    "github.com/jmeiracorbal/docker-blue-green/internal/openbao"
 )
 
 // TestLiveBlueGreen runs on a Docker-enabled CI runner. It uses isolated networks,
@@ -115,7 +117,13 @@ volumes:
 		}
 	}
 	t.Setenv("PROJECT_NAME", name)
+	secretDoc := `{"mount":"kv","secrets":[{"service":"app","name":"database_password","path":"db","field":"password"}]}`
+	if err := os.WriteFile(filepath.Join(root, "deploy", "secrets.json"), []byte(secretDoc), 0600); err != nil { t.Fatal(err) }
+	secretVersion := 1
 	c := Controller{Root: root, WaitTimeout: 90 * time.Second}
+	c.SecretResolver = func(_ context.Context, _ string, m openbao.Manifest) ([]openbao.Resolved,error) {
+		return []openbao.Resolved{{Reference:m.Secrets[0], Version:secretVersion, Data:[]byte(fmt.Sprintf("password-v%d",secretVersion))}},nil
+	}
 	release := Release{Project: name, Version: "v1", Images: map[string]string{"app": appImage}, Routes: []Route{{Host: "app.localhost", Service: "app", Port: 80}}}
 	t.Cleanup(func() {
 		for _, slot := range []string{"blue", "green"} {
@@ -152,13 +160,28 @@ volumes:
 		t.Fatalf("HTTPS route never became ready: %v", lastErr)
 	}
 	probe()
+	checkSlotSecret := func(slot, want string) {
+		t.Helper()
+		result, err := exec.CommandContext(ctx, "docker", "ps", "-q",
+			"--filter", "label=com.docker.compose.project="+name+"-"+slot,
+			"--filter", "label=com.docker.compose.service=app").Output()
+		if err != nil { t.Fatal(err) }
+		id := strings.TrimSpace(string(result))
+		if id == "" { t.Fatalf("missing %s container", slot) }
+		value, err := exec.CommandContext(ctx, "docker", "exec", id, "cat", "/run/secrets/database_password").Output()
+		if err != nil || string(value)!=want { t.Fatalf("%s mounted secret: %q: %v", slot, value, err) }
+	}
+	checkSlotSecret("blue", "password-v1")
+	secretVersion=2
 	release.Version = "v2"
 	if err := c.Deploy(ctx, release); err != nil {
 		t.Fatalf("deploy v2: %v", err)
 	}
 	probe()
+	checkSlotSecret("green", "password-v2")
 	if err := c.Rollback(ctx, name); err != nil {
 		t.Fatalf("rollback: %v", err)
 	}
 	probe()
+	checkSlotSecret("blue", "password-v1")
 }
