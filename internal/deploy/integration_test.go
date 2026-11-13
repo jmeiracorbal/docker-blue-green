@@ -179,9 +179,15 @@ volumes:
 	}
 	probe()
 	checkSlotSecret("green", "password-v2")
+	secretVersion=3
+	if err := c.ReconcileSecrets(ctx, name); err != nil {
+		t.Fatalf("reconcile changed credentials: %v", err)
+	}
+	probe()
+	checkSlotSecret("blue", "password-v3")
 	if err := c.Rollback(ctx, name); err != nil {
 		t.Fatalf("rollback: %v", err)
 	}
 	probe()
-	checkSlotSecret("blue", "password-v1")
+	checkSlotSecret("green", "password-v2")
 }
