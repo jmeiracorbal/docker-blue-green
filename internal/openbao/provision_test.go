@@ -57,3 +57,24 @@ func TestAppRoleFileMustBePrivate(t *testing.T) {
     b, err := readIdentity(file)
     if err != nil || string(b) != "abcdefgh-12345678" { t.Fatalf("invalid credential: %v", err) }
 }
+
+func TestRenderReconciliationTimer(t *testing.T) {
+    p := ProxyProvision{
+        Project:"myapp",ServerURL:"https://openbao.internal",
+        DeployUser:"deploy",RoleIDFile:"/secure/role",SecretIDFile:"/secure/secret",
+    }
+    unit,timer,err:=RenderReconciler(p,"/home/deploy")
+    if err!=nil{t.Fatal(err)}
+    for _,want:=range []string{
+        "User=deploy",
+        "secrets reconcile --project myapp",
+        "/home/deploy/.local/share/docker-blue-green/myapp/bluegreen",
+        "ConditionPathExists=/home/deploy/.local/share/docker-blue-green/myapp/.env",
+    }{
+        if !strings.Contains(unit,want){t.Errorf("unit missing %q",want)}
+    }
+    if !strings.Contains(timer,"OnCalendar=*:0/5") || !strings.Contains(timer,"bluegreen-secrets-myapp.service") {
+        t.Fatalf("invalid timer: %s",timer)
+    }
+    if _,_,err:=RenderReconciler(p,"relative/home");err==nil {t.Fatal("accepted relative home")}
+}

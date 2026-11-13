@@ -139,7 +139,7 @@ sudo bluegreen secrets configure \
   --secret-id-file /secure/secret_id
 ```
 
-The CLI installs project-scoped proxy configuration and credentials under `/etc/bluegreen/openbao/myapp/`, creates a systemd unit, and starts the proxy. Re-running with identical settings is idempotent; divergent configuration is rejected. Creating the AppRole and its policy in OpenBao remains an administrator-side prerequisite.
+The CLI installs project-scoped proxy configuration and credentials under `/etc/bluegreen/openbao/myapp/`, starts the proxy as a systemd service, and enables a per-project reconciliation timer. Re-running with identical settings is idempotent; divergent configuration is rejected. Creating the AppRole and its policy in OpenBao remains an administrator-side prerequisite.
 
 ### Declare secrets through the CLI
 
@@ -187,4 +187,6 @@ KV v2 versions contribute to the release identity. On a subsequent deployment, c
 
 Snapshots live under `.bluegreen/secrets/` on the Docker host, not in Git or GitHub Actions. They remain on host disk to support restarts and rollback. Docker Compose uses bind mounts for file-backed secrets and does not support UID remapping for those mounts, so the snapshot directories are private while file permissions allow arbitrary container UIDs to read their assigned file mounts. Use host-level disk encryption and restrictive access permissions. Obsolete snapshots are pruned after successful switches.
 
-Secret reconciliation is triggered by `bluegreen deploy`; it is not a background polling service. Automated Ansible installation of host prerequisites is a separate concern and is not yet implemented.
+The CLI-provisioned systemd timer checks OpenBao every five minutes and invokes `bluegreen secrets reconcile` against the **currently active release**. It never deploys the latest published release automatically, nor does a secret-only rotation require registry pull credentials when its immutable image is already present locally. After an explicit rollback, the engine pauses automatic reconciliation until the next manually initiated successful deployment, avoiding automatic reapplication of the rolled-back secret version. A manual `bluegreen deploy` still checks secret versions immediately.
+
+Automatic Ansible installation of Docker, Compose, and OpenBao host prerequisites is a separate concern and is not yet implemented.

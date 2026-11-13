@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,6 +49,7 @@ type State struct {
 	PreviousSecretRevision string `json:"previous_secret_revision,omitempty"`
 	ActiveSecretOverlay string `json:"active_secret_overlay,omitempty"`
 	PreviousSecretOverlay string `json:"previous_secret_overlay,omitempty"`
+	AutoReconcilePaused bool `json:"auto_reconcile_paused,omitempty"`
 	Phase           string            `json:"phase,omitempty"`
 	PendingSlot     string            `json:"pending_slot,omitempty"`
 	PendingVersion  string            `json:"pending_version,omitempty"`
@@ -414,11 +416,17 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 	if err = saveState(dir, s); err != nil {
 		return err
 	}
-	// Do not rebuild anything on the host; release images must already exist in the registry.
-	if err = c.run(ctx, root, app, r, slot, "pull"); err != nil {
-		return fmt.Errorf("pull release images: %w", err)
+	// Credential-only rotation reuses the already pulled immutable images.
+	// A timed reconciler never needs stored registry credentials.
+	secretOnly := s.ActiveVersion == r.Version && maps.Equal(s.ActiveImages, r.Images)
+	if !secretOnly {
+		if err = c.run(ctx, root, app, r, slot, "pull"); err != nil {
+			return fmt.Errorf("pull release images: %w", err)
+		}
 	}
-	if err = c.run(ctx, root, app, r, slot, "up", "-d", "--no-build", "--wait", "--wait-timeout", strconv.Itoa(int(c.WaitTimeout.Seconds()))); err != nil {
+	upArgs := []string{"up", "-d", "--no-build", "--wait", "--wait-timeout", strconv.Itoa(int(c.WaitTimeout.Seconds()))}
+	if secretOnly { upArgs = append(upArgs, "--pull", "never") }
+	if err = c.run(ctx, root, app, r, slot, upArgs...); err != nil {
 		return fmt.Errorf("start inactive slot: %w", err)
 	}
 	if err = c.verifyHealth(ctx, root, app, r, slot); err != nil {
@@ -473,6 +481,6 @@ func (c Controller) Rollback(ctx context.Context, project string) error {
 	if err = c.setRoutes(ctx, root, infra, previous, s.PreviousSlot, s.PreviousRoutes); err != nil {
 		return err
 	}
-	restored := State{ActiveSlot: s.PreviousSlot, ActiveVersion: s.PreviousVersion, ActiveHash: s.PreviousHash, ActiveRoutes: s.PreviousRoutes, PreviousSlot: s.ActiveSlot, PreviousVersion: s.ActiveVersion, PreviousHash: s.ActiveHash, PreviousRoutes: s.ActiveRoutes, ActiveImages: s.PreviousImages, PreviousImages: s.ActiveImages, ActiveSecretRevision: s.PreviousSecretRevision, PreviousSecretRevision: s.ActiveSecretRevision, ActiveSecretOverlay: s.PreviousSecretOverlay, PreviousSecretOverlay: s.ActiveSecretOverlay}
+	restored := State{ActiveSlot: s.PreviousSlot, ActiveVersion: s.PreviousVersion, ActiveHash: s.PreviousHash, ActiveRoutes: s.PreviousRoutes, PreviousSlot: s.ActiveSlot, PreviousVersion: s.ActiveVersion, PreviousHash: s.ActiveHash, PreviousRoutes: s.ActiveRoutes, ActiveImages: s.PreviousImages, PreviousImages: s.ActiveImages, ActiveSecretRevision: s.PreviousSecretRevision, PreviousSecretRevision: s.ActiveSecretRevision, ActiveSecretOverlay: s.PreviousSecretOverlay, PreviousSecretOverlay: s.ActiveSecretOverlay, AutoReconcilePaused: true}
 	return saveState(dir, restored)
 }

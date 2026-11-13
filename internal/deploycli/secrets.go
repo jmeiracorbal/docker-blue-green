@@ -16,7 +16,7 @@ import (
 
 func checkSecrets(args []string, out io.Writer) error {
     if len(args) == 0 {
-        return errors.New("usage: bluegreen secrets check|add|configure")
+        return errors.New("usage: bluegreen secrets check|add|configure|reconcile")
     }
     switch args[0] {
     case "check":
@@ -34,6 +34,20 @@ func checkSecrets(args []string, out io.Writer) error {
         if err != nil { return err }
         if err := client.Check(context.Background(), *project, manifest); err != nil { return err }
         _, err = fmt.Fprintf(out, "%d OpenBao secret references verified for %s\n", len(manifest.Secrets), *project)
+        return err
+    case "reconcile":
+        flags := flag.NewFlagSet("secrets reconcile", flag.ContinueOnError)
+        flags.SetOutput(io.Discard)
+        root := flags.String("dir", ".", "project deployment directory")
+        project := flags.String("project", "", "deployment project")
+        if err := flags.Parse(args[1:]); err != nil { return err }
+        if flags.NArg() != 0 || *project == "" {
+            return errors.New("usage: bluegreen secrets reconcile --project NAME [--dir PATH]")
+        }
+        controller, err := newController(*root, "", 0)
+        if err != nil { return err }
+        if err := controller.ReconcileSecrets(context.Background(), *project); err != nil { return err }
+        _, err = fmt.Fprintf(out, "OpenBao reconciliation completed for %s\n", *project)
         return err
     case "add":
         return addSecretReference(args[1:], out)

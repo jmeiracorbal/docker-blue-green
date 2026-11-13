@@ -86,3 +86,45 @@ func TestSnapshotRejectsInconsistentExistingContent(t *testing.T) {
     snapshot.values[0].Data=[]byte("second")
     if _,err:=stageSecretOverlay(root,"blue",snapshot);err==nil {t.Fatal("accepted changed data under same KV revision")}
 }
+
+func TestAutomaticReconciliationPreservesRollbackIntent(t *testing.T) {
+    root:=testRoot(t)
+    openbaoFixture(t,root)
+    runner:=&fakeRunner{}
+    currentVersion:=1
+    c:=Controller{Root:root,Runner:runner}
+    c.SecretResolver=func(_ context.Context,_ string,m openbao.Manifest)([]openbao.Resolved,error) {
+        return []openbao.Resolved{{Reference:m.Secrets[0],Version:currentVersion,Data:[]byte("rotatable-value")}},nil
+    }
+    ctx:=context.Background()
+    r:=release("v1")
+    if err:=c.Deploy(ctx,r);err!=nil{t.Fatal(err)}
+    currentVersion=2
+    before:=len(runner.calls)
+    if err:=c.ReconcileSecrets(ctx,"demo");err!=nil{t.Fatal(err)}
+    state,err:=readState(filepath.Join(root,".bluegreen"))
+    if err!=nil{t.Fatal(err)}
+    if state.ActiveSlot!="green" || state.ActiveVersion!="v1" {t.Fatalf("reconciler changed release unexpectedly: %+v",state)}
+    for _,call:=range runner.calls[before:]{
+        if strings.Contains(call," pull") {t.Fatalf("registry pull on secret-only rotation: %s",call)}
+    }
+    if err:=c.Rollback(ctx,"demo");err!=nil{t.Fatal(err)}
+    state,err=readState(filepath.Join(root,".bluegreen"))
+    if err!=nil{t.Fatal(err)}
+    if !state.AutoReconcilePaused {t.Fatal("automatic reconciliation was not paused after rollback")}
+    callCount:=len(runner.calls)
+    if err:=c.ReconcileSecrets(ctx,"demo");err!=nil{t.Fatal(err)}
+    if len(runner.calls)!=callCount{t.Fatal("timer undid manual rollback")}
+    if err:=c.Deploy(ctx,r);err!=nil{t.Fatal(err)}
+    state,err=readState(filepath.Join(root,".bluegreen"))
+    if err!=nil{t.Fatal(err)}
+    if state.AutoReconcilePaused {t.Fatal("manual deployment did not resume reconciliation")}
+}
+
+func TestReconcileRejectsUninitializedProject(t *testing.T) {
+    root:=testRoot(t)
+    c:=Controller{Root:root,Runner:&fakeRunner{}}
+    if err:=c.ReconcileSecrets(context.Background(),"demo");err==nil {
+        t.Fatal("accepted reconciliation without initial deployment")
+    }
+}
