@@ -1,0 +1,6 @@
+version: 1
+project: bgopenbaoit
+routes:
+  - host: app.localhost
+    service: app
+    port: 80

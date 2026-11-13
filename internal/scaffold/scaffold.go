@@ -13,6 +13,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+    "github.com/jmeiracorbal/docker-blue-green/internal/config"
 )
 
 type File struct {
@@ -161,7 +163,7 @@ func Generate(o Options) ([]File, error) {
 	infraData := marshalYAML(infra)
 
 	files := []File{
-		{Path: "deploy/routes.json", Data: []byte("{\n  \"routes\": []\n}\n")},
+		{Path: "deploy/bluegreen.yml", Data: config.Initial()},
 		{Path: "deploy/compose.yml", Data: appData},
 		{Path: "deploy/infrastructure/compose.yml", Data: infraData},
 		{Path: "deploy/infrastructure/caddy/Caddyfile", Data: []byte("{\n    email {$CADDY_ACME_EMAIL}\n}\n\nimport /etc/caddy/routes/*.caddy\n")},
@@ -184,7 +186,7 @@ func Generate(o Options) ([]File, error) {
 
 func emptyScaffold() []File {
 	return []File{
-		{Path: "deploy/routes.json", Data: []byte("{\n  \"routes\": []\n}\n")},
+		{Path: "deploy/bluegreen.yml", Data: config.Initial()},
 		{Path: "deploy/compose.yml", Data: []byte("name: \"${PROJECT_NAME}-${DEPLOYMENT_SLOT}\"\nservices:\n  app:\n    image: \"${APPLICATION_IMAGE}\"\n    expose:\n      - \"${APPLICATION_PORT}\"\n    networks:\n      bluegreen:\n        aliases:\n          - \"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-app\"\nnetworks:\n  bluegreen:\n    external: true\n    name: \"${DEPLOY_NETWORK}\"\n")},
 		{Path: "deploy/infrastructure/compose.yml", Data: []byte("name: \"${PROJECT_NAME}-infrastructure\"\nservices:\n  caddy:\n    image: \"${CADDY_IMAGE}\"\n    environment:\n      CADDY_ACME_EMAIL: \"${CADDY_ACME_EMAIL}\"\n    ports:\n      - \"${HTTP_PORT}:80/tcp\"\n      - \"${HTTPS_PORT}:443/tcp\"\n      - \"${HTTPS_PORT}:443/udp\"\n    volumes:\n      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro\n      - ./caddy/routes:/etc/caddy/routes:ro\n      - caddy_data:/data\n      - caddy_config:/config\n    networks:\n      - bluegreen\nnetworks:\n  bluegreen:\n    name: \"${DEPLOY_NETWORK}\"\nvolumes:\n  caddy_data: {}\n  caddy_config: {}\n")},
 		{Path: "deploy/infrastructure/caddy/Caddyfile", Data: []byte("{\n    email {$CADDY_ACME_EMAIL}\n}\n\nimport /etc/caddy/routes/*.caddy\n")},

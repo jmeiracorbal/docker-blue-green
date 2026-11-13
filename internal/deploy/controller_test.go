@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+    "github.com/jmeiracorbal/docker-blue-green/internal/config"
 )
 
 type fakeRunner struct {
@@ -52,6 +54,8 @@ func testRoot(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
+    cfg := config.Document{Version:1,Project:"demo",Routes:[]config.Route{{Host:"api.example.com",Service:"api",Port:8000}}}
+    if err := config.Save(root,cfg); err != nil {t.Fatal(err)}
 	return root
 }
 func release(version string) Release {

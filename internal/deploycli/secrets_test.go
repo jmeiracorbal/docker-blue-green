@@ -8,21 +8,25 @@ import (
     "strings"
     "testing"
 
+    "github.com/jmeiracorbal/docker-blue-green/internal/config"
     "github.com/jmeiracorbal/docker-blue-green/internal/openbao"
 )
 
 func TestSecretCheckUsesManagedProxyEndpoint(t *testing.T) {
-    root := t.TempDir()
-    if err := os.MkdirAll(filepath.Join(root, "deploy"), 0700); err != nil { t.Fatal(err) }
-    doc := `{"mount":"kv","secrets":[{"service":"api","name":"database_password","path":"database","field":"password"}]}`
-    if err := os.WriteFile(filepath.Join(root, "deploy", "secrets.json"), []byte(doc), 0600); err != nil { t.Fatal(err) }
-    var output bytes.Buffer
-    const project = "bluegreenclitest001"
-    err := checkSecrets([]string{"check", "--dir", root, "--project", project}, &output)
-    if err == nil || !strings.Contains(err.Error(), "access OpenBao Proxy socket") {
-        t.Fatalf("expected unprovisioned proxy socket error, got %v", err)
+    root:=t.TempDir()
+    cfg:=config.Document{Version:1,Project:"bluegreenclitest001",
+        Routes:[]config.Route{{Host:"api.example.com",Service:"api",Port:80}},
+        OpenBao:&config.OpenBao{Mount:"kv",Secrets:[]openbao.Reference{{
+            Service:"api",Name:"database_password",Path:"database",Field:"password",
+        }}},
     }
-    if output.Len() != 0 { t.Fatalf("unexpected output: %s", output.String()) }
+    if err:=config.Save(root,cfg);err!=nil{t.Fatal(err)}
+    var output bytes.Buffer
+    err:=checkSecrets([]string{"check","--dir",root},&output)
+    if err==nil || !strings.Contains(err.Error(),"access OpenBao Proxy socket"){
+        t.Fatalf("expected unprovisioned proxy error: %v",err)
+    }
+    if output.Len()!=0{t.Fatal("unexpected output")}
 }
 
 func TestSecretCheckRejectsSocketFlag(t *testing.T) {
@@ -34,24 +38,27 @@ func TestSecretCheckRejectsSocketFlag(t *testing.T) {
 
 func TestSecretAddCreatesAndExtendsManifest(t *testing.T) {
     root:=t.TempDir()
-    if err:=os.MkdirAll(filepath.Join(root,"deploy"),0700);err!=nil {t.Fatal(err)}
-    if err:=os.WriteFile(filepath.Join(root,"deploy","compose.yml"),[]byte(`services: {}`),0644);err!=nil{t.Fatal(err)}
-    args:=[]string{"add","--dir",root,"--project","myapp","--mount","kv","--service","api","--name","database_password","--path","database","--field","password"}
+    if err:=config.Save(root,config.Document{Version:1,Project:"myapp",
+        Routes:[]config.Route{{Host:"api.example.com",Service:"api",Port:80}},
+    });err!=nil{t.Fatal(err)}
+    args:=[]string{"add","--dir",root,"--project","myapp","--mount","kv","--service","api",
+        "--name","database_password","--path","database","--field","password"}
     var out bytes.Buffer
     if err:=checkSecrets(args,&out);err!=nil{t.Fatal(err)}
     if err:=checkSecrets(args,&out);err!=nil{t.Fatal(err)}
-    target:=filepath.Join(root,"deploy","secrets.json")
-    manifest,err:=openbao.Load(target,"myapp")
-    if err!=nil || len(manifest.Secrets)!=1 {t.Fatalf("manifest after repeated add: %+v %v",manifest,err)}
-    second:=[]string{"add","--dir",root,"--project","myapp","--service","api","--name","api_token","--path","authentication","--field","token"}
+    cfg,err:=config.Load(root)
+    if err!=nil || cfg.OpenBao==nil || len(cfg.OpenBao.Secrets)!=1{t.Fatalf("config: %+v %v",cfg,err)}
+    second:=[]string{"add","--dir",root,"--service","api","--name","api_token","--path","auth","--field","token"}
     if err:=checkSecrets(second,&out);err!=nil{t.Fatal(err)}
-    manifest,err=openbao.Load(target,"myapp")
-    if err!=nil || len(manifest.Secrets)!=2 {t.Fatalf("extended manifest: %+v %v",manifest,err)}
-    if err:=checkSecrets([]string{"add","--dir",root,"--project","myapp","--service","api","--name","api_token","--path","different","--field","token"},&out);err==nil{t.Fatal("overwrote secret reference")}
-    info,err:=os.Stat(target)
-    if err!=nil || info.Mode().Perm()!=0600 {t.Fatalf("manifest permissions: %v %v",info,err)}
+    cfg,err=config.Load(root)
+    if err!=nil || len(cfg.OpenBao.Secrets)!=2{t.Fatalf("extended config: %+v %v",cfg,err)}
+    if err:=checkSecrets([]string{"add","--dir",root,"--service","api","--name","api_token","--path","other","--field","token"},&out);err==nil{
+        t.Fatal("overwrote existing secret reference")
+    }
+    if _,err:=os.Stat(filepath.Join(root,"deploy","secrets.json"));!os.IsNotExist(err){
+        t.Fatal("legacy secrets.json must not be generated")
+    }
 }
-
 func TestGuidedOpenBaoSetup(t *testing.T) {
     answers:=strings.NewReader("https://openbao.example.com:8200\ndeploy\n/secure/role_id\n/secure/secret_id\n")
     var prompts bytes.Buffer
@@ -68,14 +75,15 @@ func TestGuidedOpenBaoSetup(t *testing.T) {
 }
 
 func TestDiscoveryRequiresAuthorizedKVScope(t *testing.T) {
+    root:=t.TempDir()
+    if err:=config.Save(root,config.Document{Version:1,Project:"myapp"});err!=nil{t.Fatal(err)}
     var out bytes.Buffer
-    err:=checkSecrets([]string{"list","--dir",t.TempDir(),"--project","myapp"},&out)
+    err:=checkSecrets([]string{"list","--dir",root},&out)
     if err==nil || !strings.Contains(err.Error(),"--mount"){t.Fatalf("KV mount was guessed: %v",err)}
     if out.Len()!=0{t.Fatal("unexpected discovery output")}
-    err=checkSecrets([]string{"fields","--project","myapp","--mount","kv","--path","../elsewhere"},&out)
-    if err==nil{t.Fatal("accepted unsafe KV reference")}
+    err=checkSecrets([]string{"fields","--project","../foreign","--dir",root,"--mount","kv","--path","database"},&out)
+    if err==nil{t.Fatal("accepted cross-project scope")}
 }
-
 func TestChooseKVPathAndField(t *testing.T) {
     reader:=bufio.NewReader(strings.NewReader("2\n1\n"))
     var out bytes.Buffer
