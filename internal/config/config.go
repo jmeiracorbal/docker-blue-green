@@ -151,3 +151,31 @@ func (cfg Document) Secrets() (openbao.Manifest, bool) {
     if cfg.OpenBao == nil || len(cfg.OpenBao.Secrets)==0 { return openbao.Manifest{}, false }
     return openbao.Manifest{Mount: cfg.OpenBao.Mount, Secrets:cfg.OpenBao.Secrets}, true
 }
+
+// ValidateApplicationServices checks that all configured routes and secret
+// associations point to actual application services in generated Compose.
+// Stateful infrastructure is not part of the Blue-Green application slots.
+func (cfg Document) ValidateApplicationServices(root string) error {
+    data,err:=os.ReadFile(filepath.Join(root,"deploy","compose.yml"))
+    if err!=nil{return fmt.Errorf("read application Compose: %w",err)}
+    var model struct {
+        Services map[string]any `yaml:"services"`
+    }
+    if err:=yaml.Unmarshal(data,&model);err!=nil{
+        return fmt.Errorf("parse application Compose: %w",err)
+    }
+    if len(model.Services)==0{return errors.New("application Compose has no services")}
+    for _,route:=range cfg.Routes{
+        if _,ok:=model.Services[route.Service];!ok{
+            return fmt.Errorf("route %q refers to an unknown application service %q",route.Host,route.Service)
+        }
+    }
+    if cfg.OpenBao!=nil{
+        for _,ref:=range cfg.OpenBao.Secrets{
+            if _,ok:=model.Services[ref.Service];!ok{
+                return fmt.Errorf("OpenBao secret %q refers to an unknown application service %q",ref.Name,ref.Service)
+            }
+        }
+    }
+    return nil
+}

@@ -2,7 +2,6 @@ package openbao
 
 import (
 	"context"
-	"encoding/json"
 	"net"
 	"net/http"
 	"os"
@@ -11,34 +10,25 @@ import (
 	"testing"
 )
 
-const example = `{"mount":"kv","secrets":[{"service":"api","name":"database_password","path":"database","field":"password"}]}`
-
-func TestParseManifest(t *testing.T) {
-	m, err := Parse([]byte(example), "myapp")
-	if err != nil || len(m.Secrets) != 1 {
-		t.Fatalf("unexpected parse: %#v, %v", m, err)
-	}
+func exampleManifest() Manifest {
+    return Manifest{Mount:"kv",Secrets:[]Reference{{
+        Service:"api",Name:"database_password",Path:"database",Field:"password",
+    }}}
 }
 
-func TestRejectedReferences(t *testing.T) {
-	cases := []string{
-		`{"mount":"kv","secrets":[{"service":"api","name":"pw","path":"../other","field":"password"}]}`,
-		`{"mount":"kv","secrets":[{"service":"api","name":"pw","path":"database?version=1","field":"password"}]}`,
-		`{"mount":"kv","secrets":[{"service":"api","name":"pw","path":"database","field":"password"},{"service":"api","name":"pw","path":"database","field":"password"}]}`,
-		`{"mount":"kv","secrets":[]}`,
-		`{"mount":"kv","secrets":[{"service":"api","name":"pw","path":"database","field":"password","value":"never-store-secret-here"}]}`,
-	}
-	for _, c := range cases {
-		if _, err := Parse([]byte(c), "myapp"); err == nil {
-			t.Errorf("accepted invalid contract: %s", c)
-		}
-	}
-	if _, err := Parse([]byte(example), "../other"); err == nil {
-		t.Fatal("accepted invalid project")
-	}
-	if _, err := Parse([]byte(example+`{}`), "myapp"); err == nil {
-		t.Fatal("accepted trailing JSON")
-	}
+func TestManifestValidation(t *testing.T) {
+    if err:=exampleManifest().Validate("myapp");err!=nil{t.Fatal(err)}
+    cases:=[]Manifest{
+        {Mount:"kv",Secrets:[]Reference{{Service:"api",Name:"pw",Path:"../foreign",Field:"password"}}},
+        {Mount:"kv",Secrets:[]Reference{{Service:"api",Name:"pw",Path:"database?version=1",Field:"password"}}},
+        {Mount:"kv",Secrets:[]Reference{{Service:"api",Name:"pw",Path:"db",Field:"password"},{Service:"api",Name:"pw",Path:"db",Field:"password"}}},
+        {Mount:"kv",Secrets:nil},
+        {Mount:"bad/path",Secrets:[]Reference{{Service:"api",Name:"pw",Path:"db",Field:"password"}}},
+    }
+    for _,m:=range cases{
+        if err:=m.Validate("myapp");err==nil{t.Errorf("accepted invalid reference %+v",m)}
+    }
+    if err:=exampleManifest().Validate("../foreign");err==nil{t.Fatal("accepted project traversal")}
 }
 
 func socketServer(t *testing.T, handler http.HandlerFunc) string {
@@ -72,10 +62,7 @@ func TestCheckUsesScopedReadOnlyAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, err := Parse([]byte(example), "myapp")
-	if err != nil {
-		t.Fatal(err)
-	}
+	manifest:=exampleManifest()
 	if err := client.Check(context.Background(), "myapp", manifest); err != nil {
 		t.Fatal(err)
 	}
@@ -91,10 +78,7 @@ func TestErrorsDoNotRevealSecretData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, err := Parse([]byte(example), "myapp")
-	if err != nil {
-		t.Fatal(err)
-	}
+	manifest:=exampleManifest()
 	checkErr := client.Check(context.Background(), "myapp", manifest)
 	if checkErr == nil || strings.Contains(checkErr.Error(), leaked) {
 		t.Fatalf("unsafe error: %v", checkErr)
@@ -109,10 +93,7 @@ func TestMissingFieldRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, err := Parse([]byte(example), "myapp")
-	if err != nil {
-		t.Fatal(err)
-	}
+	manifest:=exampleManifest()
 	err = client.Check(context.Background(), "myapp", manifest)
 	if err == nil || !strings.Contains(err.Error(), "missing") {
 		t.Fatalf("missing field accepted: %v", err)

@@ -71,6 +71,7 @@ func Configure(args []string, input io.Reader, output io.Writer) error {
         }
     }
     if err:=cfg.Validate(true);err!=nil{return err}
+    if err:=cfg.ValidateApplicationServices(*dir);err!=nil{return err}
     if err:=config.Save(*dir,cfg);err!=nil{return err}
     _,err=fmt.Fprintf(output,"Configured %s in %s\n",cfg.Project,config.Path(*dir))
     return err
@@ -88,6 +89,7 @@ func Config(args []string, out io.Writer) error {
     cfg,err:=config.Load(*dir)
     if err!=nil{return err}
     if err:=cfg.Validate(true);err!=nil{return err}
+    if err:=cfg.ValidateApplicationServices(*dir);err!=nil{return err}
     if action=="export" {
         b,err:=cfg.Export()
         if err!=nil{return err}

@@ -70,3 +70,15 @@ func TestSaveDoesNotOverwriteSymlink(t *testing.T) {
     b,err:=os.ReadFile(victim)
     if err!=nil || string(b)!="leave-me" {t.Fatalf("victim changed: %q, %v",b,err)}
 }
+
+func TestRejectsRoutesOutsideApplicationCompose(t *testing.T) {
+    root:=t.TempDir()
+    if err:=os.MkdirAll(filepath.Join(root,"deploy"),0755);err!=nil{t.Fatal(err)}
+    if err:=os.WriteFile(filepath.Join(root,"deploy","compose.yml"),[]byte("services:\n  api:\n    image: nginx:latest\n"),0644);err!=nil{
+        t.Fatal(err)
+    }
+    cfg:=Document{Version:1,Project:"demo",Routes:[]Route{{Host:"web.example.com",Service:"web",Port:80}}}
+    if err:=cfg.ValidateApplicationServices(root);err==nil{t.Fatal("accepted route to unknown service")}
+    cfg.Routes[0].Service="api"
+    if err:=cfg.ValidateApplicationServices(root);err!=nil{t.Fatal(err)}
+}

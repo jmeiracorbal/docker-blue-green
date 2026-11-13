@@ -30,12 +30,12 @@ jobs:
   deploy:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     needs: publish
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@534cba82805c78e9cc3ccea28e8b15ed1cc3f8f3
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@9283212c9cd64647644405c7159c09b2b32ea24c
     with:
       project: ${{ vars.DEPLOY_PROJECT }}
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
-      engine_ref: 534cba82805c78e9cc3ccea28e8b15ed1cc3f8f3
+      engine_ref: 9283212c9cd64647644405c7159c09b2b32ea24c
       deploy_host: ${{ vars.DEPLOY_HOST }}
       deploy_user: ${{ vars.DEPLOY_USER }}
       deploy_port: ${{ fromJSON(vars.DEPLOY_PORT) }}

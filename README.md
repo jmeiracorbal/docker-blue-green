@@ -48,7 +48,7 @@ The generated files are:
 ```text
 deploy/
 ├── compose.yml
-├── routes.json
+├── bluegreen.yml
 └── infrastructure/
     ├── compose.yml
     └── caddy/
@@ -57,6 +57,32 @@ deploy/
 .github/workflows/release.yml
 .env.example
 ```
+
+Configure the single project-level contract after initialization:
+
+```bash
+bluegreen configure
+bluegreen config check
+```
+
+The guided CLI prompts for the project identifier, application hostname, service and container port. Automation can pass the same values without prompts:
+
+```bash
+bluegreen configure --project myapp --host api.example.com --service api --port 8000
+```
+
+All projects use `deploy/bluegreen.yml`:
+
+```yaml
+version: 1
+project: myapp
+routes:
+  - host: api.example.com
+    service: api
+    port: 8000
+```
+
+The file also contains optional OpenBao KV references. Docker Compose retains service definitions, persistent volumes and networking. The immutable release JSON remains a runtime input (image digests and version), and the engine rejects a release whose project or routes differ from the YAML contract. `bluegreen config export` emits only project and routes as JSON for reusable CI workflows; it never includes secret references or values.
 
 Set the environment variables required by the generated Compose files. Application images use per-service variables such as `API_IMAGE` so that releases can provide immutable image references. Host-published application ports are converted into container-only exposed ports; shared infrastructure remains outside the Blue/Green slots.
 
@@ -83,7 +109,7 @@ The generated workflow calls the shared publisher at a fixed commit for reproduc
 
 ## Deploying
 
-Define the public hostnames, application service names and container ports in `deploy/routes.json`. Every application container must have a working Docker healthcheck. Keep stateful services in `deploy/infrastructure/compose.yml`; migrations must remain compatible with the previously running application during a cutover.
+Define the public hostnames, application service names and container ports using `bluegreen configure`, which writes `deploy/bluegreen.yml`. Every application container must have a working Docker healthcheck. Keep stateful services in `deploy/infrastructure/compose.yml`; migrations must remain compatible with the previously running application during a cutover.
 
 The CLI can deploy a release manifest on a Docker host:
 
@@ -160,7 +186,7 @@ The output contains the permitted KV paths, for example `database` or `backend/a
 bluegreen secrets fields --project myapp --mount kv --path database
 ```
 
-OpenBao requires `list` permission on project-scoped KV v2 metadata and `read` for field-name discovery. Metadata listings are not filtered per child key by OpenBao; restricting the operation to `projects/myapp` is therefore essential. The mount name is explicit on first use; once a project has a `deploy/secrets.json` file, the CLI reads its mount automatically. These commands communicate with the local project socket and consequently run on the Docker host.
+OpenBao requires `list` permission on project-scoped KV v2 metadata and `read` for field-name discovery. Metadata listings are not filtered per child key by OpenBao; restricting the operation to `projects/myapp` is therefore essential. The mount name is explicit on first use; once the project's `deploy/bluegreen.yml` contains an OpenBao mount, the CLI reads it automatically. These commands communicate with the local project socket and consequently run on the Docker host.
 
 After `bluegreen init`, associate a secret with an application service using the guided CLI on the Docker host:
 
@@ -170,20 +196,16 @@ bluegreen secrets add --project myapp --mount kv --service api --name database_p
 
 The CLI displays numbered authorized KV paths and then their available field names. The user selects one of each. The chosen names are saved as a reference; no values are copied to the repository. For an unattended workflow or a development machine without access to the server-local proxy, supply `--path database --field password` explicitly to the same command. The `--mount` flag is only needed for the first reference.
 
-This generates `deploy/secrets.json` containing **references only**:
+The same CLI updates the `openbao` section of `deploy/bluegreen.yml`, containing **references only**:
 
-```json
-{
-  "mount": "kv",
-  "secrets": [
-    {
-      "service": "api",
-      "name": "database_password",
-      "path": "database",
-      "field": "password"
-    }
-  ]
-}
+```yaml
+openbao:
+  mount: kv
+  secrets:
+    - service: api
+      name: database_password
+      path: database
+      field: password
 ```
 
 Verify the references against the running proxy without specifying a socket:

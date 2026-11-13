@@ -2,14 +2,24 @@ package deploycli
 
 import (
     "bytes"
+    "os"
+    "path/filepath"
     "strings"
     "testing"
 
     "github.com/jmeiracorbal/docker-blue-green/internal/config"
 )
 
+func prepareProject(t *testing.T,root string,service string) {
+    t.Helper()
+    if err:=os.MkdirAll(filepath.Join(root,"deploy"),0755);err!=nil{t.Fatal(err)}
+    compose:="services:\n  "+service+":\n    image: nginx:1.27-alpine\n"
+    if err:=os.WriteFile(filepath.Join(root,"deploy","compose.yml"),[]byte(compose),0644);err!=nil{t.Fatal(err)}
+}
+
 func TestConfigureUniformProjectManifest(t *testing.T) {
     root:=t.TempDir()
+    prepareProject(t,root,"api")
     if err:=config.Save(root,config.Document{Version:1});err!=nil{t.Fatal(err)}
     args:=[]string{"--dir",root,"--project","myapp","--host","api.example.com","--service","api","--port","8000"}
     var output bytes.Buffer
@@ -28,6 +38,7 @@ func TestConfigureUniformProjectManifest(t *testing.T) {
 
 func TestConfigureGuided(t *testing.T) {
     root:=t.TempDir()
+    prepareProject(t,root,"web")
     if err:=config.Save(root,config.Document{Version:1});err!=nil{t.Fatal(err)}
     answers:=strings.NewReader("myapp\napp.example.com\nweb\n3000\n")
     var prompts bytes.Buffer
@@ -39,6 +50,7 @@ func TestConfigureGuided(t *testing.T) {
 
 func TestIncompleteConfigRejected(t *testing.T) {
     root:=t.TempDir()
+    prepareProject(t,root,"api")
     if err:=config.Save(root,config.Document{Version:1});err!=nil{t.Fatal(err)}
     if err:=Config([]string{"check","--dir",root},&bytes.Buffer{});err==nil{
         t.Fatal("accepted unfinished configuration")

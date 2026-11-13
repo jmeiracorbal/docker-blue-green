@@ -389,6 +389,7 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
     cfg, err := config.Load(root)
     if err != nil { return err }
     if err := cfg.Validate(true); err != nil { return err }
+    if err := cfg.ValidateApplicationServices(root); err != nil { return err }
     if cfg.Project != r.Project { return errors.New("release project differs from deploy/bluegreen.yml") }
     if len(cfg.Routes) != len(r.Routes) { return errors.New("release routes differ from deploy/bluegreen.yml") }
     permitted := make(map[string]config.Route,len(cfg.Routes))

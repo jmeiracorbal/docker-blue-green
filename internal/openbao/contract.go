@@ -1,12 +1,8 @@
 package openbao
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"regexp"
 	"strings"
 )
@@ -33,31 +29,6 @@ var (
 )
 
 // Parse validates the complete configuration and rejects unknown fields.
-func Parse(data []byte, project string) (Manifest, error) {
-	var m Manifest
-	d := json.NewDecoder(bytes.NewReader(data))
-	d.DisallowUnknownFields()
-	if err := d.Decode(&m); err != nil {
-		return Manifest{}, fmt.Errorf("parse OpenBao secret references: %w", err)
-	}
-	var tail any
-	if err := d.Decode(&tail); err != io.EOF {
-		return Manifest{}, errors.New("OpenBao secret references contain trailing data")
-	}
-	if err := m.Validate(project); err != nil {
-		return Manifest{}, err
-	}
-	return m, nil
-}
-
-func Load(path, project string) (Manifest, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Manifest{}, fmt.Errorf("read OpenBao secret references: %w", err)
-	}
-	return Parse(data, project)
-}
-
 func (m Manifest) Validate(project string) error {
 	if !projectName.MatchString(project) {
 		return fmt.Errorf("invalid OpenBao project name %q", project)
