@@ -126,34 +126,49 @@ Prerequisites are `bao proxy`, systemd, a Linux deployment account, and an exist
 path "kv/data/projects/myapp/*" {
   capabilities = ["read"]
 }
+
+path "kv/metadata/projects/myapp" {
+  capabilities = ["list"]
+}
+
+path "kv/metadata/projects/myapp/*" {
+  capabilities = ["list"]
+}
 ```
 
-The OpenBao administrator supplies the AppRole identifiers in protected files on the host. Then run:
+The OpenBao administrator creates the project-scoped AppRole identity and makes its identifiers available as protected files on the host. The one-time interactive setup needs only:
 
 ```bash
-sudo bluegreen secrets configure \
-  --project myapp \
-  --server https://openbao.example.com:8200 \
-  --user deploy \
-  --role-id-file /secure/role_id \
-  --secret-id-file /secure/secret_id
+sudo bluegreen secrets setup --project myapp
 ```
+
+The CLI prompts for the HTTPS URL of the OpenBao server, the existing Linux deployment account and the file locations of the AppRole RoleID and SecretID. **It does not request or print the credential values**, which remain in protected files. Systemd installation requires root privileges. This command runs on the deployment server, not on the developer's workstation.
 
 The CLI installs project-scoped proxy configuration and credentials under `/etc/bluegreen/openbao/myapp/`, starts the proxy as a systemd service, and enables a per-project reconciliation timer. Re-running with identical settings is idempotent; divergent configuration is rejected. Creating the AppRole and its policy in OpenBao remains an administrator-side prerequisite.
 
-### Declare secrets through the CLI
+### Discover and associate KV v2 secrets
 
-After `bluegreen init`, run in the application repository:
+After the proxy is running on the deployment server, discover the available secret paths **within the authorized project only**:
 
 ```bash
-bluegreen secrets add \
-  --project myapp \
-  --mount kv \
-  --service api \
-  --name database_password \
-  --path database \
-  --field password
+bluegreen secrets list --project myapp --mount kv
 ```
+
+The output contains the permitted KV paths, for example `database` or `backend/api`, not their values. To inspect available field names without displaying credentials:
+
+```bash
+bluegreen secrets fields --project myapp --mount kv --path database
+```
+
+OpenBao requires `list` permission on project-scoped KV v2 metadata and `read` for field-name discovery. Metadata listings are not filtered per child key by OpenBao; restricting the operation to `projects/myapp` is therefore essential. The mount name is explicit on first use; once a project has a `deploy/secrets.json` file, the CLI reads its mount automatically. These commands communicate with the local project socket and consequently run on the Docker host.
+
+After `bluegreen init`, associate a secret with an application service using the guided CLI on the Docker host:
+
+```bash
+bluegreen secrets add --project myapp --mount kv --service api --name database_password
+```
+
+The CLI displays numbered authorized KV paths and then their available field names. The user selects one of each. The chosen names are saved as a reference; no values are copied to the repository. For an unattended workflow or a development machine without access to the server-local proxy, supply `--path database --field password` explicitly to the same command. The `--mount` flag is only needed for the first reference.
 
 This generates `deploy/secrets.json` containing **references only**:
 
