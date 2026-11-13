@@ -30,19 +30,18 @@ jobs:
   deploy:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     needs: publish
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@ad39017c75238e96e9eaadbd1fe4fb0cf16458c5
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@100750409969ab9666fe7538f13b7294ef04f2d6
     with:
       project: ${{ vars.DEPLOY_PROJECT }}
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
-      engine_ref: ad39017c75238e96e9eaadbd1fe4fb0cf16458c5
+      engine_ref: 100750409969ab9666fe7538f13b7294ef04f2d6
       deploy_host: ${{ vars.DEPLOY_HOST }}
       deploy_user: ${{ vars.DEPLOY_USER }}
       deploy_port: ${{ fromJSON(vars.DEPLOY_PORT) }}
       deploy_ssh_known_hosts: ${{ vars.DEPLOY_SSH_KNOWN_HOSTS }}
     secrets:
-      DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
-      DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}
+      SERVER_SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
       OCI_REGISTRY_PULL_USERNAME: ${{ secrets.OCI_REGISTRY_PULL_USERNAME }}
       OCI_REGISTRY_PULL_TOKEN: ${{ secrets.OCI_REGISTRY_PULL_TOKEN }}
 `),

@@ -115,17 +115,26 @@ func writeSecretOnce(path string,data []byte) error {
     return writeSnapshotOnce(path,data,0444)
 }
 func writeSnapshotOnce(path string,data []byte,mode os.FileMode) error {
-    f,err:=os.OpenFile(path,os.O_WRONLY|os.O_CREATE|os.O_EXCL,mode)
-    if errors.Is(err,os.ErrExist) {
-        existing,readErr:=os.ReadFile(path)
-        if readErr!=nil{return readErr}
+    verifyExisting:=func() error {
+        info,err:=os.Lstat(path)
+        if err!=nil{return err}
+        if !info.Mode().IsRegular() {return fmt.Errorf("unsafe secret snapshot: %s",path)}
+        existing,err:=os.ReadFile(path)
+        if err!=nil{return err}
         if !bytes.Equal(existing,data) {return fmt.Errorf("existing snapshot differs at %s",path)}
         return nil
     }
+    if err:=verifyExisting();err==nil{return nil}else if !errors.Is(err,os.ErrNotExist){return err}
+    tmp,err:=os.CreateTemp(filepath.Dir(path),".snapshot-")
     if err!=nil{return err}
-    if err:=f.Chmod(mode);err!=nil {f.Close();return err}
-    if _,err:=f.Write(data);err!=nil {f.Close();return err}
-    if err:=f.Close();err!=nil{return err}
+    defer os.Remove(tmp.Name())
+    if err:=tmp.Chmod(mode);err!=nil{tmp.Close();return err}
+    if _,err:=tmp.Write(data);err!=nil{tmp.Close();return err}
+    if err:=tmp.Sync();err!=nil{tmp.Close();return err}
+    if err:=tmp.Close();err!=nil{return err}
+    // Hard-link creation exposes the completed file atomically, without
+    // replacing an already-mounted secret inode from another deployment.
+    if err:=os.Link(tmp.Name(),path);errors.Is(err,os.ErrExist){return verifyExisting()}else if err!=nil{return err}
     return nil
 }
 

@@ -196,7 +196,7 @@ func TestPublishedWorkflowUsesRegistryContract(t *testing.T) {
             t.Errorf("deploy job repeats publishing configuration %q", unexpected)
         }
     }
-    for _, required := range []string{"secrets.OCI_REGISTRY_PULL_USERNAME", "secrets.OCI_REGISTRY_PULL_TOKEN"} {
+    for _, required := range []string{"secrets.OCI_REGISTRY_PULL_USERNAME", "secrets.OCI_REGISTRY_PULL_TOKEN", "secrets.SERVER_SSH_PRIVATE_KEY"} {
         if !strings.Contains(deployJob, required) {
             t.Errorf("deploy job missing optional private registry credential %q", required)
         }
@@ -204,6 +204,11 @@ func TestPublishedWorkflowUsesRegistryContract(t *testing.T) {
     for _, obsolete := range []string{"OCI_IMAGE_PREFIX", "OCI_PUSH_USERNAME", "GIT_REGISTRY_TOKEN", "OCI_PULL_USERNAME", "OCI_PULL_TOKEN"} {
         if strings.Contains(workflow, obsolete) {
             t.Errorf("obsolete OCI variable in generated workflow: %q", obsolete)
+        }
+    }
+    for _, forbidden := range []string{"secrets.DEPLOY_ENV", "secrets.DEPLOY_SSH_PRIVATE_KEY"} {
+        if strings.Contains(workflow, forbidden) {
+            t.Errorf("obsolete deployment secret in release workflow: %s", forbidden)
         }
     }
     if strings.Contains(workflow, "publish-images.yml@main") {
