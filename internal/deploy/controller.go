@@ -425,7 +425,7 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 		}
 	}
 	upArgs := []string{"up", "-d", "--no-build", "--wait", "--wait-timeout", strconv.Itoa(int(c.WaitTimeout.Seconds()))}
-	if secretOnly { upArgs = append(upArgs, "--pull", "never") }
+	if secretOnly { upArgs = append(upArgs, "--pull", "never", "--force-recreate") }
 	if err = c.run(ctx, root, app, r, slot, upArgs...); err != nil {
 		return fmt.Errorf("start inactive slot: %w", err)
 	}
