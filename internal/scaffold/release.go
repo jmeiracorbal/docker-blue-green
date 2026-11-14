@@ -17,21 +17,21 @@ permissions:
 
 jobs:
   publish:
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@80b72a4746efe656f39351e0206961a59c85ab09
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@a21b275fc2d3266003affba973d30121f4bd8737
     with:
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
-      engine_ref: 80b72a4746efe656f39351e0206961a59c85ab09
+      engine_ref: a21b275fc2d3266003affba973d30121f4bd8737
     secrets:
       OCI_REGISTRY_TOKEN: ${{ secrets.OCI_REGISTRY_TOKEN }}
 
   deploy:
     needs: publish
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@80b72a4746efe656f39351e0206961a59c85ab09
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@a21b275fc2d3266003affba973d30121f4bd8737
     with:
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
-      engine_ref: 80b72a4746efe656f39351e0206961a59c85ab09
+      engine_ref: a21b275fc2d3266003affba973d30121f4bd8737
     secrets:
       SERVER_SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
       OCI_REGISTRY_PULL_USERNAME: ${{ secrets.OCI_REGISTRY_PULL_USERNAME }}
