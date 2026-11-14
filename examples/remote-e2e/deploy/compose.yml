@@ -1,0 +1,26 @@
+name: "${PROJECT_NAME}-${DEPLOYMENT_SLOT}"
+services:
+  app:
+    build:
+      context: ../app
+      dockerfile: Dockerfile
+    image: "${APP_IMAGE}"
+    environment:
+      DEPLOYMENT_SLOT: "${DEPLOYMENT_SLOT}"
+      E2E_FAIL_BEFORE_START: "${E2E_FAIL_BEFORE_START:-0}"
+      E2E_FAIL_BEFORE_SWITCH: "${E2E_FAIL_BEFORE_SWITCH:-0}"
+      E2E_FAIL_HEALTH: "${E2E_FAIL_HEALTH:-0}"
+    healthcheck:
+      test: ["CMD", "/e2e", "health"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    networks:
+      edge:
+        aliases:
+          - "${PROJECT_NAME}-${DEPLOYMENT_SLOT}-app"
+networks:
+  edge:
+    external: true
+    name: "${DEPLOY_NETWORK}"

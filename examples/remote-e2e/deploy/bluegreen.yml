@@ -1,0 +1,21 @@
+version: 1
+project: bge2e
+routes:
+  - host: e2e.localhost
+    service: app
+    port: 8080
+registry:
+  host: ghcr.io
+  repository: example/docker-blue-green-e2e
+  username: example
+lifecycle:
+  before_start:
+    - service: app
+      entrypoint: /e2e
+      args: [before-start]
+      timeout_seconds: 30
+  before_switch:
+    - service: app
+      entrypoint: /e2e
+      args: [before-switch]
+      timeout_seconds: 30

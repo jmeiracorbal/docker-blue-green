@@ -1,0 +1,21 @@
+name: "${PROJECT_NAME}-infrastructure"
+services:
+  caddy:
+    image: "${CADDY_IMAGE}"
+    environment:
+      CADDY_ACME_EMAIL: "${CADDY_ACME_EMAIL}"
+    ports:
+      - "${HTTP_PORT}:80/tcp"
+      - "${HTTPS_PORT}:443/tcp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/routes:/etc/caddy/routes:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+networks:
+  edge:
+    name: "${DEPLOY_NETWORK}"
+volumes:
+  caddy_data: {}
+  caddy_config: {}
