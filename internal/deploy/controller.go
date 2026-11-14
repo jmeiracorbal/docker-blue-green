@@ -44,6 +44,8 @@ type State struct {
 	PreviousSlot    string            `json:"previous_slot,omitempty"`
 	PreviousVersion string            `json:"previous_version,omitempty"`
 	PreviousHash    string            `json:"previous_hash,omitempty"`
+	ActiveLifecycleHash string `json:"active_lifecycle_hash,omitempty"`
+	PreviousLifecycleHash string `json:"previous_lifecycle_hash,omitempty"`
 	PreviousRoutes  []Route           `json:"previous_routes,omitempty"`
 	ActiveImages    map[string]string `json:"active_images,omitempty"`
 	PreviousImages  map[string]string `json:"previous_images,omitempty"`
@@ -390,6 +392,7 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
     if err != nil { return err }
     if err := cfg.Validate(true); err != nil { return err }
     if err := cfg.ValidateApplicationServices(root); err != nil { return err }
+    if err := cfg.ValidateLifecycleServices(r.Images);err!=nil{return err}
     if cfg.Project != r.Project { return errors.New("release project differs from deploy/bluegreen.yml") }
     if len(cfg.Routes) != len(r.Routes) { return errors.New("release routes differ from deploy/bluegreen.yml") }
     permitted := make(map[string]config.Route,len(cfg.Routes))
@@ -414,6 +417,12 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 	if c.Automatic && (s.AutoReconcilePaused || s.ActiveHash != c.ExpectedActiveHash) {
 		return nil
 	}
+    lifecycleHash,err:=lifecycleFingerprint(cfg.Lifecycle)
+    if err!=nil{return err}
+    if s.ActiveVersion==r.Version && maps.Equal(s.ActiveImages,r.Images) &&
+        s.ActiveLifecycleHash!=lifecycleHash {
+        return errors.New("lifecycle changed for the active release; publish a new version before deployment")
+    }
 	snapshot, err := c.loadSecrets(ctx, root, r)
 	if err != nil { return fmt.Errorf("resolve OpenBao secrets: %w", err) }
 	currentHash := releaseHashWithSecrets(r, snapshot)
@@ -447,6 +456,9 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 			return fmt.Errorf("pull release images: %w", err)
 		}
 	}
+    if cfg.Lifecycle!=nil && !c.Automatic && !secretOnly {
+        if err=c.runLifecycle(ctx,root,app,r,slot,"before_start",cfg.Lifecycle.BeforeStart);err!=nil{return err}
+    }
 	upArgs := []string{"up", "-d", "--no-build", "--wait", "--wait-timeout", strconv.Itoa(int(c.WaitTimeout.Seconds()))}
 	if secretOnly { upArgs = append(upArgs, "--pull", "never", "--force-recreate") }
 	if err = c.run(ctx, root, app, r, slot, upArgs...); err != nil {
@@ -455,6 +467,9 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 	if err = c.verifyHealth(ctx, root, app, r, slot); err != nil {
 		return fmt.Errorf("validate inactive slot: %w", err)
 	}
+    if cfg.Lifecycle!=nil && !c.Automatic {
+        if err=c.runLifecycle(ctx,root,app,r,slot,"before_switch",cfg.Lifecycle.BeforeSwitch);err!=nil{return err}
+    }
 	s.Phase = "switching"
 	if err = saveState(dir, s); err != nil {
 		return err
@@ -462,7 +477,7 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 	if err = c.setRoutes(ctx, root, infra, r, slot, r.Routes); err != nil {
 		return fmt.Errorf("switch Caddy traffic: %w", err)
 	}
-	next := State{ActiveSlot: slot, ActiveVersion: r.Version, ActiveHash: currentHash, ActiveRoutes: r.Routes, PreviousSlot: s.ActiveSlot, PreviousVersion: s.ActiveVersion, PreviousHash: s.ActiveHash, PreviousRoutes: s.ActiveRoutes, ActiveImages: r.Images, PreviousImages: s.ActiveImages, ActiveSecretOverlay: overlay, PreviousSecretOverlay: s.ActiveSecretOverlay}
+	next := State{ActiveSlot: slot, ActiveVersion: r.Version, ActiveHash: currentHash, ActiveLifecycleHash: lifecycleHash, PreviousLifecycleHash: s.ActiveLifecycleHash, ActiveRoutes: r.Routes, PreviousSlot: s.ActiveSlot, PreviousVersion: s.ActiveVersion, PreviousHash: s.ActiveHash, PreviousRoutes: s.ActiveRoutes, ActiveImages: r.Images, PreviousImages: s.ActiveImages, ActiveSecretOverlay: overlay, PreviousSecretOverlay: s.ActiveSecretOverlay}
 	if snapshot != nil { next.ActiveSecretRevision = snapshot.revision }
 	next.PreviousSecretRevision = s.ActiveSecretRevision
 	if err = saveState(dir, next); err != nil {
@@ -504,6 +519,6 @@ func (c Controller) Rollback(ctx context.Context, project string) error {
 	if err = c.setRoutes(ctx, root, infra, previous, s.PreviousSlot, s.PreviousRoutes); err != nil {
 		return err
 	}
-	restored := State{ActiveSlot: s.PreviousSlot, ActiveVersion: s.PreviousVersion, ActiveHash: s.PreviousHash, ActiveRoutes: s.PreviousRoutes, PreviousSlot: s.ActiveSlot, PreviousVersion: s.ActiveVersion, PreviousHash: s.ActiveHash, PreviousRoutes: s.ActiveRoutes, ActiveImages: s.PreviousImages, PreviousImages: s.ActiveImages, ActiveSecretRevision: s.PreviousSecretRevision, PreviousSecretRevision: s.ActiveSecretRevision, ActiveSecretOverlay: s.PreviousSecretOverlay, PreviousSecretOverlay: s.ActiveSecretOverlay, AutoReconcilePaused: true}
+	restored := State{ActiveSlot: s.PreviousSlot, ActiveVersion: s.PreviousVersion, ActiveHash: s.PreviousHash, ActiveLifecycleHash: s.PreviousLifecycleHash, PreviousLifecycleHash: s.ActiveLifecycleHash, ActiveRoutes: s.PreviousRoutes, PreviousSlot: s.ActiveSlot, PreviousVersion: s.ActiveVersion, PreviousHash: s.ActiveHash, PreviousRoutes: s.ActiveRoutes, ActiveImages: s.PreviousImages, PreviousImages: s.ActiveImages, ActiveSecretRevision: s.PreviousSecretRevision, PreviousSecretRevision: s.ActiveSecretRevision, ActiveSecretOverlay: s.PreviousSecretOverlay, PreviousSecretOverlay: s.ActiveSecretOverlay, AutoReconcilePaused: true}
 	return saveState(dir, restored)
 }

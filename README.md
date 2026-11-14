@@ -137,6 +137,68 @@ The deployment derives the registry hostname and exact image references from the
 
 The remote workflow runs over verified SSH. Shared infrastructure remains up while the inactive application slot is prepared, then Caddy is reloaded only after the new containers pass their healthchecks. The previous slot is preserved for rollback. A full server-level end-to-end test must be performed before using the workflow for production traffic.
 
+## Declarative deployment lifecycle
+
+Every Compose project can declare one-off operations through `deploy/bluegreen.yml`.
+The deployment engine executes commands using the **immutable image of the
+declared application service**, without framework-specific integrations or
+separate shell scripts on the deployment host.
+
+```yaml
+lifecycle:
+  before_start:
+    - service: app
+      entrypoint: /app/migrate
+      args: [--non-interactive]
+      timeout_seconds: 300
+  before_switch:
+    - service: app
+      entrypoint: /app/verify
+      args: [--readiness]
+      timeout_seconds: 60
+```
+
+The commands are examples: each consuming application supplies its own
+executables inside its published OCI image. `service` must be declared in the
+application Compose file and be present in the release's digest-pinned image
+set. The CLI passes the configured executable and argument list directly
+to Docker Compose, without invoking a shell on the deployment host.
+
+Execution order:
+
+1. Start shared infrastructure, recover any interrupted deployment and
+   prepare the inactive slot and OpenBao secret snapshot.
+2. Pull the immutable application images. For new application releases,
+   run `before_start` steps sequentially, each in an ephemeral container
+   belonging to the inactive slot's Compose project.
+3. Start the inactive application slot and require its Docker healthchecks
+   to succeed.
+4. Run `before_switch` steps sequentially. Switch Caddy only when **all**
+   operations and healthchecks have succeeded.
+5. Preserve the previous slot for an explicit application rollback.
+
+Each step requires a Compose service, executable and a timeout between 1 and
+3600 seconds; `args` is an optional list of literal arguments. The engine
+uses `docker compose run --rm --no-deps -T --pull never --entrypoint`.
+It rejects unknown YAML fields, invalid services and malformed operations.
+
+A nonzero exit code or timeout aborts the deployment without changing the
+active Caddy route. On retry, the engine reconciles the interrupted state.
+Operations can run **more than once after a failure or interruption**;
+database migrations must be idempotent and backward compatible with the
+previous application version. No automatic database rollback is attempted.
+An application rollback only restores container and routing state, not
+database schema or data. Design schema changes using expand/migrate/contract.
+
+Automatic OpenBao secret reconciliation skips lifecycle operations: a
+credential rotation must not accidentally rerun database migrations. A
+change to lifecycle instructions for the same already-active application
+release is rejected; publish a new version instead.
+
+Database-specific validators (including `schema-guard`) are **not bundled**
+or required by this change. They may be evaluated as separate optional
+validation integrations later.
+
 ## OpenBao integration
 
 OpenBao is optional. The **OpenBao server** stores secrets centrally. An independent **OpenBao Proxy** runs as a Linux systemd service for each project, outside application containers. The CLI connects automatically through `/run/bluegreen/<project>/openbao.sock`; the socket, proxy credentials, and any supervisors are never mounted into the images.
