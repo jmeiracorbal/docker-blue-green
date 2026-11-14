@@ -51,3 +51,18 @@ jobs:
             -f examples/remote-e2e/deploy/infrastructure/compose.yml config --quiet
       - name: Build OCI fixture image
         run: docker build -t bluegreen-remote-e2e:verify examples/remote-e2e/app
+
+  ssh-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install isolated SSH test server
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server
+      - name: Exercise OCI, SSH, Caddy, lifecycle and rollback
+        run: bash ./scripts/test-ssh-e2e.sh
