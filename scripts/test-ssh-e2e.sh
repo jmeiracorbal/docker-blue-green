@@ -52,14 +52,14 @@ PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes
-UsePAM no
+UsePAM yes
 AllowUsers $SSH_USER
 Subsystem sftp /usr/lib/openssh/sftp-server
-LogLevel ERROR
+LogLevel VERBOSE
 EOF
 sudo install -d -m 755 /run/sshd
 sudo /usr/sbin/sshd -t -f "$TMP/sshd_config"
-sudo /usr/sbin/sshd -f "$TMP/sshd_config"
+sudo /usr/sbin/sshd -f "$TMP/sshd_config" -E "$TMP/sshd.log"
 
 SSH_ARGS=(-i "$TMP/client" -p "$SSH_PORT" -o "UserKnownHostsFile=$TMP/known_hosts" -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=3)
 SCP_ARGS=(-i "$TMP/client" -P "$SSH_PORT" -o "UserKnownHostsFile=$TMP/known_hosts" -o StrictHostKeyChecking=yes -o BatchMode=yes)
@@ -67,7 +67,11 @@ for _ in {1..15}; do
   if ssh "${SSH_ARGS[@]}" "$SSH_TARGET" true 2>/dev/null; then break; fi
   sleep 1
 done
-ssh "${SSH_ARGS[@]}" "$SSH_TARGET" 'docker info >/dev/null'
+if ! ssh "${SSH_ARGS[@]}" "$SSH_TARGET" 'docker info >/dev/null'; then
+  echo "SSH authentication failed; server diagnostics:" >&2
+  sudo tail -n 50 "$TMP/sshd.log" >&2 || true
+  exit 1
+fi
 
 docker run -d --rm --name "$REGISTRY_CONTAINER" \
   -p "127.0.0.1:$REGISTRY_PORT:5000" registry:2 >/dev/null
