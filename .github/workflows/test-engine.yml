@@ -30,3 +30,24 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test -v -timeout 8m ./internal/deploy -run '^TestLiveBlueGreen$'
+
+  remote-fixture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test the standalone fixture application
+        working-directory: examples/remote-e2e/app
+        run: go test -race ./...
+      - name: Validate the deployment contract
+        run: go run ./cmd/bluegreen config check --dir examples/remote-e2e
+      - name: Validate Docker Compose manifests
+        run: |
+          docker compose --env-file examples/remote-e2e/.env.example \
+            -f examples/remote-e2e/deploy/compose.yml config --quiet
+          docker compose --env-file examples/remote-e2e/.env.example \
+            -f examples/remote-e2e/deploy/infrastructure/compose.yml config --quiet
+      - name: Build OCI fixture image
+        run: docker build -t bluegreen-remote-e2e:verify examples/remote-e2e/app
