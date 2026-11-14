@@ -2,6 +2,7 @@ package deploy
 
 import (
     "context"
+    "errors"
     "os"
     "path/filepath"
     "strings"
@@ -167,5 +168,24 @@ func TestLifecycleHooksAreFrameworkNeutral(t *testing.T) {
                 t.Fatalf("incorrect %s lifecycle order: %v",tc.name,runner.calls)
             }
         })
+    }
+}
+
+type blockingLifecycleRunner struct{ fakeRunner }
+
+func (r *blockingLifecycleRunner) Run(ctx context.Context, _ string, _ []string, _ string, _ ...string) error {
+    <-ctx.Done()
+    return ctx.Err()
+}
+
+func TestLifecycleEnforcesPerStepTimeout(t *testing.T) {
+    root:=testRoot(t)
+    c:=Controller{Root:root,Runner:&blockingLifecycleRunner{}}
+    err:=c.runLifecycle(context.Background(),root,filepath.Join(root,"deploy","compose.yml"),
+        release("v1"),"green","before_switch",[]config.LifecycleStep{{
+            Service:"api",Entrypoint:"/app/check",TimeoutSeconds:1,
+        }})
+    if !errors.Is(err,context.DeadlineExceeded) {
+        t.Fatalf("lifecycle step did not honor timeout: %v",err)
     }
 }
