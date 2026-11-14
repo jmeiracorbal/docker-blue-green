@@ -22,16 +22,8 @@ func Configure(args []string, input io.Reader, output io.Writer) error {
     host:=flags.String("host","","public route hostname")
     service:=flags.String("service","","application service")
     port:=flags.Int("port",0,"container TCP port")
-    regHost:=flags.String("registry-host","","OCI registry hostname")
-    regRepo:=flags.String("registry-repository","","OCI image namespace")
-    regUser:=flags.String("registry-username","","OCI login account (not a token)")
-    deployHost:=flags.String("deploy-host","","SSH deployment host")
-    deployUser:=flags.String("deploy-user","","SSH deployment account")
-    deployPort:=flags.Int("deploy-port",0,"SSH deployment port")
-    deployKnownHosts:=flags.String("deploy-known-hosts","","verified OpenSSH known_hosts line")
-    deployDisabled:=flags.Bool("deploy-disabled",false,"disable remote deployment")
     if err:=flags.Parse(args);err!=nil{return err}
-    if flags.NArg()!=0{return errors.New("usage: bluegreen configure [--dir PATH] [--project NAME] [--host HOST --service SERVICE --port PORT] [--registry-host HOST --registry-repository PATH --registry-username USER] [--deploy-host HOST --deploy-user USER --deploy-port PORT --deploy-known-hosts KEY]")}
+    if flags.NArg()!=0{return errors.New("usage: bluegreen configure [--dir PATH] [--project NAME] [--host HOST --service SERVICE --port PORT]")}
 
     cfg,err:=config.Load(*dir)
     if err!=nil{return err}
@@ -78,47 +70,6 @@ func Configure(args []string, input io.Reader, output io.Writer) error {
             cfg.Routes=append(cfg.Routes,config.Route{Host:*host,Service:*service,Port:*port})
         }
     }
-    // One guided setup path and one fully declarative, noninteractive path.
-    // All project configuration remains in deploy/bluegreen.yml.
-    registryProvided:=*regHost!="" || *regRepo!="" || *regUser!=""
-    if registryProvided && (*regHost==""||*regRepo==""||*regUser=="") {
-        return errors.New("OCI registry requires --registry-host, --registry-repository and --registry-username")
-    }
-    interactive:=len(args)==0 || (len(args)==2 && args[0]=="--dir")
-    if !registryProvided && cfg.Registry==nil && interactive {
-        *regHost,err=ask("OCI registry host: ");if err!=nil{return err}
-        *regRepo,err=ask("OCI image repository: ");if err!=nil{return err}
-        *regUser,err=ask("OCI registry username: ");if err!=nil{return err}
-        registryProvided=true
-    }
-    if registryProvided { cfg.Registry=&config.Registry{Host:*regHost,Repository:*regRepo,Username:*regUser} }
-
-    deploymentProvided:=*deployHost!="" || *deployUser!="" || *deployPort!=0 || *deployKnownHosts!=""
-    if *deployDisabled && deploymentProvided {return errors.New("cannot disable and configure remote deployment together")}
-    if deploymentProvided && (*deployHost=="" || *deployUser=="" || *deployPort==0 || *deployKnownHosts==""){
-        return errors.New("remote deployment requires host, user, port and a verified known_hosts entry")
-    }
-    if !deploymentProvided && !*deployDisabled && cfg.Deployment==nil && interactive {
-        answer,askErr:=ask("Enable SSH deployment? (yes/no): ")
-        if askErr!=nil{return askErr}
-        switch strings.ToLower(answer) {
-        case "yes":
-            *deployHost,err=ask("SSH deployment host: ");if err!=nil{return err}
-            *deployUser,err=ask("SSH deployment user: ");if err!=nil{return err}
-            value,askErr:=ask("SSH deployment port: ");if askErr!=nil{return askErr}
-            *deployPort,err=strconv.Atoi(value);if err!=nil{return errors.New("SSH port must be a number")}
-            *deployKnownHosts,err=ask("Verified SSH known_hosts line: ");if err!=nil{return err}
-            deploymentProvided=true
-        case "no":
-            cfg.Deployment=nil
-        default:
-            return errors.New("answer yes or no for SSH deployment")
-        }
-    }
-    if *deployDisabled {cfg.Deployment=nil}
-    if deploymentProvided {
-        cfg.Deployment=&config.Deployment{Enabled:true,Host:*deployHost,User:*deployUser,Port:*deployPort,KnownHosts:*deployKnownHosts}
-    }
     if err:=cfg.Validate(true);err!=nil{return err}
     if err:=cfg.ValidateApplicationServices(*dir);err!=nil{return err}
     if err:=config.Save(*dir,cfg);err!=nil{return err}
@@ -139,6 +90,7 @@ func Config(args []string, out io.Writer) error {
     if err!=nil{return err}
     if err:=cfg.Validate(true);err!=nil{return err}
     if err:=cfg.ValidateApplicationServices(*dir);err!=nil{return err}
+    if _,err:=cfg.Export();err!=nil{return err}
     if action=="export" {
         b,err:=cfg.Export()
         if err!=nil{return err}

@@ -56,9 +56,11 @@ jobs:
           [[ "$IMAGE_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || exit 1
           go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen@$ENGINE_REF"
           "$(go env GOPATH)/bin/bluegreen" config export --dir . > "$RUNNER_TEMP/project.json"
-          echo "registry_host=$(jq -er '.registry.host' "$RUNNER_TEMP/project.json")" >> "$GITHUB_OUTPUT"
-          echo "registry_repository=$(jq -er '.registry.repository' "$RUNNER_TEMP/project.json")" >> "$GITHUB_OUTPUT"
-          echo "registry_username=$(jq -er '.registry.username' "$RUNNER_TEMP/project.json")" >> "$GITHUB_OUTPUT"
+          {
+            echo "registry_host=$(jq -er '.registry.host' "$RUNNER_TEMP/project.json")"
+            echo "registry_repository=$(jq -er '.registry.repository' "$RUNNER_TEMP/project.json")"
+            echo "registry_username=$(jq -er '.registry.username' "$RUNNER_TEMP/project.json")"
+          } >> "$GITHUB_OUTPUT"
 
       - id: images
         name: Discover buildable application services

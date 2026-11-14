@@ -60,14 +60,16 @@ jobs:
           [[ "$ENGINE_REF" =~ ^[0-9a-f]{40}$ ]] || exit 1
           go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen@$ENGINE_REF"
           "$(go env GOPATH)/bin/bluegreen" config export --dir . > "$RUNNER_TEMP/project.json"
-          echo "enabled=$(jq -er '.deployment.enabled' "$RUNNER_TEMP/project.json")" >> "$GITHUB_OUTPUT"
-          echo "project=$(jq -er '.project' "$RUNNER_TEMP/project.json")" >> "$GITHUB_OUTPUT"
-          if [[ "$(jq -r '.deployment.enabled' "$RUNNER_TEMP/project.json")" == "true" ]]; then
-            echo "host=$(jq -er '.deployment.host' "$RUNNER_TEMP/project.json")" >> "$GITHUB_OUTPUT"
-            echo "user=$(jq -er '.deployment.user' "$RUNNER_TEMP/project.json")" >> "$GITHUB_OUTPUT"
-            echo "port=$(jq -er '.deployment.port' "$RUNNER_TEMP/project.json")" >> "$GITHUB_OUTPUT"
-            echo "known_hosts=$(jq -er '.deployment.known_hosts' "$RUNNER_TEMP/project.json")" >> "$GITHUB_OUTPUT"
-          fi
+          {
+            echo "enabled=$(jq -er '.deployment.enabled' "$RUNNER_TEMP/project.json")"
+            echo "project=$(jq -er '.project' "$RUNNER_TEMP/project.json")"
+            if [[ "$(jq -r '.deployment.enabled' "$RUNNER_TEMP/project.json")" == "true" ]]; then
+              echo "host=$(jq -er '.deployment.host' "$RUNNER_TEMP/project.json")"
+              echo "user=$(jq -er '.deployment.user' "$RUNNER_TEMP/project.json")"
+              echo "port=$(jq -er '.deployment.port' "$RUNNER_TEMP/project.json")"
+              echo "known_hosts=$(jq -er '.deployment.known_hosts' "$RUNNER_TEMP/project.json")"
+            fi
+          } >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: plan

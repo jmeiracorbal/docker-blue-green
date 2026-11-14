@@ -99,3 +99,21 @@ func TestRejectPartialRegistryAndRemoteFlags(t *testing.T) {
         }
     }
 }
+
+func TestConfigCheckRequiresRegistry(t *testing.T) {
+    root:=t.TempDir()
+    prepareProject(t,root,"api")
+    cfg:=config.Document{Version:1,Project:"demo",Routes:[]config.Route{
+        {Host:"api.example.com",Service:"api",Port:8000},
+    }}
+    if err:=config.Save(root,cfg);err!=nil{t.Fatal(err)}
+    if err:=Config([]string{"check","--dir",root},&bytes.Buffer{});err==nil{
+        t.Fatal("configuration was marked publishable without OCI registry")
+    }
+    if err:=Configure([]string{"--dir",root,
+        "--registry-host","ghcr.io","--registry-repository","company/demo",
+        "--registry-username","ci-publisher"},strings.NewReader(""),&bytes.Buffer{});err!=nil{
+        t.Fatal(err)
+    }
+    if err:=Config([]string{"check","--dir",root},&bytes.Buffer{});err!=nil{t.Fatal(err)}
+}
