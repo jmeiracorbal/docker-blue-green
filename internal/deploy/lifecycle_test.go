@@ -155,8 +155,13 @@ func TestLifecycleHooksAreFrameworkNeutral(t *testing.T) {
             runner:=&fakeRunner{}
             c:=Controller{Root:root,Runner:runner}
             if err:=c.Deploy(context.Background(),release("v1"));err!=nil{t.Fatal(err)}
-            migrate:=callIndex(runner.calls,"--entrypoint "+tc.before.Entrypoint+" api")
-            verify:=callIndex(runner.calls,"--entrypoint "+tc.after.Entrypoint+" api")
+            command:=func(step config.LifecycleStep) string {
+                suffix:="--entrypoint "+step.Entrypoint+" api"
+                if len(step.Args)>0 {suffix+=" "+strings.Join(step.Args," ")}
+                return suffix
+            }
+            migrate:=callIndex(runner.calls,command(tc.before))
+            verify:=callIndex(runner.calls,command(tc.after))
             traffic:=callIndex(runner.calls,"caddy reload")
             if migrate<0 || verify<0 || traffic<0 || !(migrate<verify && verify<traffic){
                 t.Fatalf("incorrect %s lifecycle order: %v",tc.name,runner.calls)
