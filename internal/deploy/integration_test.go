@@ -118,6 +118,9 @@ volumes:
 	}
 	t.Setenv("PROJECT_NAME", name)
     configYAML:=fmt.Sprintf("version: 1\nproject: %s\nroutes:\n  - host: app.localhost\n    service: app\n    port: 80\nopenbao:\n  mount: kv\n  secrets:\n    - service: app\n      name: database_password\n      path: db\n      field: password\n",name)
+    // Exercise both lifecycle phases against a real, digest-pinned application
+    // container. nginx -v and nginx -t are harmless framework-neutral probes.
+    configYAML += "lifecycle:\n  before_start:\n    - service: app\n      entrypoint: nginx\n      args: [-v]\n      timeout_seconds: 30\n  before_switch:\n    - service: app\n      entrypoint: nginx\n      args: [-t]\n      timeout_seconds: 30\n"
     if err:=os.WriteFile(filepath.Join(root,"deploy","bluegreen.yml"),[]byte(configYAML),0644);err!=nil{t.Fatal(err)}
 	secretVersion := 1
 	c := Controller{Root: root, WaitTimeout: 90 * time.Second}

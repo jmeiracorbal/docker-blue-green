@@ -28,6 +28,7 @@ type Document struct {
     Registry *Registry `yaml:"registry,omitempty"`
     Deployment *Deployment `yaml:"deployment,omitempty"`
     OpenBao *OpenBao `yaml:"openbao,omitempty"`
+    Lifecycle *Lifecycle `yaml:"lifecycle,omitempty"`
 }
 
 type Route struct {
@@ -51,6 +52,20 @@ type Deployment struct {
     User string `yaml:"user,omitempty" json:"user,omitempty"`
     Port int `yaml:"port,omitempty" json:"port,omitempty"`
     KnownHosts string `yaml:"known_hosts,omitempty" json:"known_hosts,omitempty"`
+}
+
+// Lifecycle is a sequence of explicit, container-local one-off operations.
+// Blue-Green does not interpret shell scripts or run database migrations itself.
+type Lifecycle struct {
+    BeforeStart []LifecycleStep `yaml:"before_start,omitempty"`
+    BeforeSwitch []LifecycleStep `yaml:"before_switch,omitempty"`
+}
+
+type LifecycleStep struct {
+    Service string `yaml:"service"`
+    Entrypoint string `yaml:"entrypoint"`
+    Args []string `yaml:"args,omitempty"`
+    TimeoutSeconds int `yaml:"timeout_seconds"`
 }
 
 type OpenBao struct {
@@ -181,6 +196,34 @@ func (cfg Document) Validate(complete bool) error {
             if err!=nil || len(pub)<16 { return errors.New("invalid deployment SSH public host key") }
         }
     }
+    if cfg.Lifecycle != nil {
+        if len(cfg.Lifecycle.BeforeStart)>12 || len(cfg.Lifecycle.BeforeSwitch)>12 {
+            return errors.New("lifecycle permits at most 12 operations per stage")
+        }
+        for stage, steps := range map[string][]LifecycleStep{
+            "before_start": cfg.Lifecycle.BeforeStart, "before_switch": cfg.Lifecycle.BeforeSwitch,
+        } {
+            for i, step := range steps {
+                if !servicePattern.MatchString(step.Service) {
+                    return fmt.Errorf("lifecycle %s[%d]: invalid Compose service",stage,i)
+                }
+                if step.Entrypoint=="" || len(step.Entrypoint)>256 ||
+                    strings.ContainsAny(step.Entrypoint," \t\r\n\x00") ||
+                    strings.HasPrefix(step.Entrypoint,"-") {
+                    return fmt.Errorf("lifecycle %s[%d]: invalid executable",stage,i)
+                }
+                if step.TimeoutSeconds<1 || step.TimeoutSeconds>3600 {
+                    return fmt.Errorf("lifecycle %s[%d]: timeout_seconds must be 1..3600",stage,i)
+                }
+                if len(step.Args)>40 { return fmt.Errorf("lifecycle %s[%d]: too many arguments",stage,i) }
+                for _,arg:=range step.Args {
+                    if len(arg)>1024 || strings.ContainsAny(arg,"\x00\r\n") {
+                        return fmt.Errorf("lifecycle %s[%d]: invalid argument",stage,i)
+                    }
+                }
+            }
+        }
+    }
     if cfg.OpenBao != nil {
         if !mountPattern.MatchString(cfg.OpenBao.Mount) {
             return errors.New("OpenBao KV v2 mount must be configured")
@@ -255,11 +298,31 @@ func (cfg Document) ValidateApplicationServices(root string) error {
             return fmt.Errorf("route %q refers to an unknown application service %q",route.Host,route.Service)
         }
     }
+    if cfg.Lifecycle!=nil {
+        for _,step:=range append(append([]LifecycleStep(nil),cfg.Lifecycle.BeforeStart...),cfg.Lifecycle.BeforeSwitch...) {
+            if _,ok:=model.Services[step.Service];!ok {
+                return fmt.Errorf("lifecycle refers to unknown application Compose service %q",step.Service)
+            }
+        }
+    }
     if cfg.OpenBao!=nil{
         for _,ref:=range cfg.OpenBao.Secrets{
             if _,ok:=model.Services[ref.Service];!ok{
                 return fmt.Errorf("OpenBao secret %q refers to an unknown application service %q",ref.Name,ref.Service)
             }
+        }
+    }
+    return nil
+}
+
+// ValidateLifecycleServices requires the hook service to be part of the
+// immutable release image set. This prevents unpinned auxiliary services from
+// being executed as deployment hooks.
+func (cfg Document) ValidateLifecycleServices(images map[string]string) error {
+    if cfg.Lifecycle==nil{return nil}
+    for _,step:=range append(append([]LifecycleStep(nil),cfg.Lifecycle.BeforeStart...),cfg.Lifecycle.BeforeSwitch...) {
+        if _,ok:=images[step.Service];!ok{
+            return fmt.Errorf("lifecycle service %q has no immutable release image",step.Service)
         }
     }
     return nil
