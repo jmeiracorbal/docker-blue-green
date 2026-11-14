@@ -2,6 +2,7 @@ package deploycli
 
 import (
     "bytes"
+    "encoding/base64"
     "os"
     "path/filepath"
     "strings"
@@ -21,13 +22,16 @@ func TestConfigureUniformProjectManifest(t *testing.T) {
     root:=t.TempDir()
     prepareProject(t,root,"api")
     if err:=config.Save(root,config.Document{Version:1});err!=nil{t.Fatal(err)}
-    args:=[]string{"--dir",root,"--project","myapp","--host","api.example.com","--service","api","--port","8000"}
+    args:=[]string{"--dir",root,"--project","myapp","--host","api.example.com","--service","api","--port","8000",
+        "--registry-host","ghcr.io","--registry-repository","team/myapp","--registry-username","ci-publisher"}
     var output bytes.Buffer
     if err:=Configure(args,strings.NewReader(""),&output);err!=nil{t.Fatal(err)}
     if err:=Configure(args,strings.NewReader(""),&output);err!=nil{t.Fatal(err)}
     cfg,err:=config.Load(root)
     if err!=nil{t.Fatal(err)}
-    if len(cfg.Routes)!=1 || cfg.Project!="myapp"{t.Fatalf("non-idempotent config: %+v",cfg)}
+    if len(cfg.Routes)!=1 || cfg.Project!="myapp" || cfg.Registry==nil || cfg.Registry.Host!="ghcr.io"{
+        t.Fatalf("non-idempotent config: %+v",cfg)
+    }
     var exported bytes.Buffer
     if err:=Config([]string{"export","--dir",root},&exported);err!=nil{t.Fatal(err)}
     if !strings.Contains(exported.String(),`"api.example.com"`){t.Fatal(exported.String())}
@@ -40,7 +44,7 @@ func TestConfigureGuided(t *testing.T) {
     root:=t.TempDir()
     prepareProject(t,root,"web")
     if err:=config.Save(root,config.Document{Version:1});err!=nil{t.Fatal(err)}
-    answers:=strings.NewReader("myapp\napp.example.com\nweb\n3000\n")
+    answers:=strings.NewReader("myapp\napp.example.com\nweb\n3000\nghcr.io\nteam/myapp\npublisher\nno\n")
     var prompts bytes.Buffer
     if err:=Configure([]string{"--dir",root},answers,&prompts);err!=nil{t.Fatal(err)}
     if !strings.Contains(prompts.String(),"Public hostname:"){t.Fatalf("missing prompts: %s",prompts.String())}
@@ -61,4 +65,55 @@ func TestIncompleteConfigRejected(t *testing.T) {
     }
     cfg,err:=config.Load(root)
     if err!=nil || cfg.Project!=""{t.Fatal("failed configure changed the project")}
+}
+
+func TestConfigureRemoteDeploymentAndDisable(t *testing.T) {
+    root:=t.TempDir()
+    prepareProject(t,root,"api")
+    if err:=config.Save(root,config.Document{Version:1,Project:"demo",Routes:[]config.Route{
+        {Host:"api.example.com",Service:"api",Port:8000}},
+        Registry:&config.Registry{Host:"ghcr.io",Repository:"team/demo",Username:"publisher"}});err!=nil{t.Fatal(err)}
+    knownHost:="deploy.example.com ssh-ed25519 "+base64.StdEncoding.EncodeToString([]byte("verified-public-host-key-fixture"))
+    args:=[]string{"--dir",root,"--deploy-host","deploy.example.com","--deploy-user","deploy",
+        "--deploy-port","22","--deploy-known-hosts",knownHost}
+    if err:=Configure(args,strings.NewReader(""),&bytes.Buffer{});err!=nil{t.Fatal(err)}
+    cfg,err:=config.Load(root)
+    if err!=nil || cfg.Deployment==nil || !cfg.Deployment.Enabled {t.Fatalf("remote config not saved: %+v %v",cfg,err)}
+    if err:=Configure([]string{"--dir",root,"--deploy-disabled"},strings.NewReader(""),&bytes.Buffer{});err!=nil{t.Fatal(err)}
+    cfg,err=config.Load(root)
+    if err!=nil || cfg.Deployment!=nil{t.Fatal("remote deployment not disabled",err)}
+}
+
+func TestRejectPartialRegistryAndRemoteFlags(t *testing.T) {
+    root:=t.TempDir()
+    prepareProject(t,root,"api")
+    if err:=config.Save(root,config.Document{Version:1,Project:"demo",
+        Routes:[]config.Route{{Host:"api.example.com",Service:"api",Port:8000}}});err!=nil{t.Fatal(err)}
+    for _,args:=range [][]string{
+        {"--dir",root,"--registry-host","ghcr.io"},
+        {"--dir",root,"--deploy-host","example.com"},
+        {"--dir",root,"--deploy-disabled","--deploy-host","example.com"},
+    } {
+        if err:=Configure(args,strings.NewReader(""),&bytes.Buffer{});err==nil {
+            t.Fatalf("accepted partial configuration: %v",args)
+        }
+    }
+}
+
+func TestConfigCheckRequiresRegistry(t *testing.T) {
+    root:=t.TempDir()
+    prepareProject(t,root,"api")
+    cfg:=config.Document{Version:1,Project:"demo",Routes:[]config.Route{
+        {Host:"api.example.com",Service:"api",Port:8000},
+    }}
+    if err:=config.Save(root,cfg);err!=nil{t.Fatal(err)}
+    if err:=Config([]string{"check","--dir",root},&bytes.Buffer{});err==nil{
+        t.Fatal("configuration was marked publishable without OCI registry")
+    }
+    if err:=Configure([]string{"--dir",root,
+        "--registry-host","ghcr.io","--registry-repository","company/demo",
+        "--registry-username","ci-publisher"},strings.NewReader(""),&bytes.Buffer{});err!=nil{
+        t.Fatal(err)
+    }
+    if err:=Config([]string{"check","--dir",root},&bytes.Buffer{});err!=nil{t.Fatal(err)}
 }

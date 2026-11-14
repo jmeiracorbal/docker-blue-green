@@ -3,24 +3,16 @@ name: Publish OCI images
 on:
   workflow_call:
     inputs:
-      oci_registry_host:
-        description: OCI registry hostname, for example ghcr.io
-        type: string
-        required: true
-      oci_registry_repository:
-        description: Image repository path, for example team/project
-        type: string
-        required: true
-      oci_registry_username:
-        description: Registry account used to publish images
-        type: string
-        required: true
       version:
         description: Release version to publish as a container image tag
         type: string
         required: true
       source_ref:
         description: Existing Git ref used to build the release
+        type: string
+        required: true
+      engine_ref:
+        description: Immutable revision of the Blue-Green configuration engine
         type: string
         required: true
     secrets:
@@ -40,27 +32,35 @@ jobs:
     outputs:
       matrix: ${{ steps.images.outputs.matrix }}
       registry_host: ${{ steps.registry.outputs.registry_host }}
+      registry_repository: ${{ steps.registry.outputs.registry_repository }}
+      registry_username: ${{ steps.registry.outputs.registry_username }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_ref }}
           persist-credentials: false
 
-      - name: Validate OCI image destination and version
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Load OCI registry from the project contract
         id: registry
         env:
-          OCI_REGISTRY_HOST: ${{ inputs.oci_registry_host }}
-          OCI_REGISTRY_REPOSITORY: ${{ inputs.oci_registry_repository }}
-          OCI_REGISTRY_USERNAME: ${{ inputs.oci_registry_username }}
+          ENGINE_REF: ${{ inputs.engine_ref }}
           IMAGE_VERSION: ${{ inputs.version }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$OCI_REGISTRY_HOST" =~ ^[a-z0-9][a-z0-9.:-]*$ && ( "$OCI_REGISTRY_HOST" == *.* || "$OCI_REGISTRY_HOST" == *:* || "$OCI_REGISTRY_HOST" == "localhost" ) ]] || { echo "Invalid OCI registry hostname" >&2; exit 1; }
-          [[ "$OCI_REGISTRY_REPOSITORY" =~ ^[a-z0-9][a-z0-9/_.-]*$ && "$OCI_REGISTRY_REPOSITORY" != *"//"* && "$OCI_REGISTRY_REPOSITORY" != */ ]] || { echo "Invalid OCI image repository path" >&2; exit 1; }
-          [[ -n "$OCI_REGISTRY_USERNAME" ]] || { echo "OCI registry username is required" >&2; exit 1; }
-          echo "registry_host=$OCI_REGISTRY_HOST" >> "$GITHUB_OUTPUT"
-          [[ "$IMAGE_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "Invalid OCI image version" >&2; exit 1; }
+          [[ "$ENGINE_REF" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$IMAGE_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || exit 1
+          go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen@$ENGINE_REF"
+          "$(go env GOPATH)/bin/bluegreen" config export --dir . > "$RUNNER_TEMP/project.json"
+          {
+            echo "registry_host=$(jq -er '.registry.host' "$RUNNER_TEMP/project.json")"
+            echo "registry_repository=$(jq -er '.registry.repository' "$RUNNER_TEMP/project.json")"
+            echo "registry_username=$(jq -er '.registry.username' "$RUNNER_TEMP/project.json")"
+          } >> "$GITHUB_OUTPUT"
 
       - id: images
         name: Discover buildable application services
@@ -109,7 +109,7 @@ jobs:
       - uses: docker/login-action@v3
         with:
           registry: ${{ needs.discover.outputs.registry_host }}
-          username: ${{ inputs.oci_registry_username }}
+          username: ${{ needs.discover.outputs.registry_username }}
           password: ${{ secrets.OCI_REGISTRY_TOKEN }}
 
       - name: Build and publish versioned image
@@ -122,7 +122,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ inputs.oci_registry_host }}/${{ inputs.oci_registry_repository }}-${{ matrix.service }}:${{ inputs.version }}
+            ${{ needs.discover.outputs.registry_host }}/${{ needs.discover.outputs.registry_repository }}-${{ matrix.service }}:${{ inputs.version }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -132,8 +132,8 @@ jobs:
 
       - name: Record image digest
         env:
-          OCI_REGISTRY_HOST: ${{ inputs.oci_registry_host }}
-          OCI_REGISTRY_REPOSITORY: ${{ inputs.oci_registry_repository }}
+          OCI_REGISTRY_HOST: ${{ needs.discover.outputs.registry_host }}
+          OCI_REGISTRY_REPOSITORY: ${{ needs.discover.outputs.registry_repository }}
           IMAGE_SERVICE: ${{ matrix.service }}
           IMAGE_VERSION: ${{ inputs.version }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}

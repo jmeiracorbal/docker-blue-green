@@ -3,10 +3,6 @@ name: Deploy Blue-Green release
 on:
   workflow_call:
     inputs:
-      project:
-        description: Deployment identifier
-        required: true
-        type: string
       version:
         description: Immutable release version
         required: true
@@ -19,21 +15,9 @@ on:
         description: Immutable Git revision of the Blue-Green CLI
         required: true
         type: string
-      deploy_host:
-        required: true
-        type: string
-      deploy_user:
-        required: true
-        type: string
-      deploy_port:
-        required: true
-        type: number
-      deploy_ssh_known_hosts:
-        required: true
-        type: string
     secrets:
       SERVER_SSH_PRIVATE_KEY:
-        required: true
+        required: false
       OCI_REGISTRY_PULL_USERNAME:
         required: false
       OCI_REGISTRY_PULL_TOKEN:
@@ -43,11 +27,53 @@ permissions:
   contents: read
 
 concurrency:
-  group: docker-blue-green-${{ inputs.project }}
+  group: docker-blue-green-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.contract.outputs.enabled }}
+      project: ${{ steps.contract.outputs.project }}
+      host: ${{ steps.contract.outputs.host }}
+      user: ${{ steps.contract.outputs.user }}
+      port: ${{ steps.contract.outputs.port }}
+      known_hosts: ${{ steps.contract.outputs.known_hosts }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Determine deployment from the unified contract
+        id: contract
+        env:
+          ENGINE_REF: ${{ inputs.engine_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$ENGINE_REF" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen@$ENGINE_REF"
+          "$(go env GOPATH)/bin/bluegreen" config export --dir . > "$RUNNER_TEMP/project.json"
+          {
+            echo "enabled=$(jq -er '.deployment.enabled' "$RUNNER_TEMP/project.json")"
+            echo "project=$(jq -er '.project' "$RUNNER_TEMP/project.json")"
+            if [[ "$(jq -r '.deployment.enabled' "$RUNNER_TEMP/project.json")" == "true" ]]; then
+              echo "host=$(jq -er '.deployment.host' "$RUNNER_TEMP/project.json")"
+              echo "user=$(jq -er '.deployment.user' "$RUNNER_TEMP/project.json")"
+              echo "port=$(jq -er '.deployment.port' "$RUNNER_TEMP/project.json")"
+              echo "known_hosts=$(jq -er '.deployment.known_hosts' "$RUNNER_TEMP/project.json")"
+            fi
+          } >> "$GITHUB_OUTPUT"
+
   deploy:
+    needs: plan
+    if: ${{ needs.plan.outputs.enabled == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,7 +93,7 @@ jobs:
 
       - name: Build immutable deployment bundle
         env:
-          DEPLOY_PROJECT: ${{ inputs.project }}
+          DEPLOY_PROJECT: ${{ needs.plan.outputs.project }}
           DEPLOY_VERSION: ${{ inputs.version }}
           ENGINE_REF: ${{ inputs.engine_ref }}
         shell: bash
@@ -81,7 +107,8 @@ jobs:
           cp "$(go env GOPATH)/bin/bluegreen" .bluegreen-dist/bluegreen
           .bluegreen-dist/bluegreen config export --dir . > .bluegreen-dist/project.json
           jq -e --arg project "$DEPLOY_PROJECT" '
-            .project == $project and (.routes | type == "array" and length > 0)
+            .project == $project and .deployment.enabled == true and
+            (.routes | type == "array" and length > 0)
           ' .bluegreen-dist/project.json >/dev/null
           jq -s 'reduce .[] as $item ({}; .[$item.service] = $item.image)' \
             .bluegreen-dist/images/image-*/image.json > .bluegreen-dist/images.json
@@ -94,12 +121,16 @@ jobs:
             (.images | type == "object" and length > 0) and
             ([.images[] | (type == "string" and test("^[a-z0-9][a-z0-9.:-]*/[a-z0-9][a-z0-9/_.-]*@sha256:[a-f0-9]{64}$"))] | all)
           ' .bluegreen-dist/release.json >/dev/null
+          registry_prefix=$(jq -er '.registry.host + "/" + .registry.repository + "-"' .bluegreen-dist/project.json)
+          jq -e --arg prefix "$registry_prefix" '
+            .images | to_entries | all(.[]; .value | startswith($prefix))
+          ' .bluegreen-dist/release.json >/dev/null
           tar -czf .bluegreen-dist/deploy.tgz deploy
 
       - name: Configure verified SSH connection
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ inputs.deploy_ssh_known_hosts }}
+          SSH_KNOWN_HOSTS: ${{ needs.plan.outputs.known_hosts }}
         shell: bash
         run: |
           set -euo pipefail
@@ -113,10 +144,10 @@ jobs:
 
       - name: Transfer and run deployment
         env:
-          SSH_HOST: ${{ inputs.deploy_host }}
-          SSH_USER: ${{ inputs.deploy_user }}
-          SSH_PORT: ${{ inputs.deploy_port }}
-          DEPLOY_PROJECT: ${{ inputs.project }}
+          SSH_HOST: ${{ needs.plan.outputs.host }}
+          SSH_USER: ${{ needs.plan.outputs.user }}
+          SSH_PORT: ${{ needs.plan.outputs.port }}
+          DEPLOY_PROJECT: ${{ needs.plan.outputs.project }}
           OCI_REGISTRY_PULL_USERNAME: ${{ secrets.OCI_REGISTRY_PULL_USERNAME }}
           OCI_REGISTRY_PULL_TOKEN: ${{ secrets.OCI_REGISTRY_PULL_TOKEN }}
         shell: bash
@@ -151,10 +182,10 @@ jobs:
       - name: Remove temporary remote credentials
         if: always()
         env:
-          SSH_HOST: ${{ inputs.deploy_host }}
-          SSH_USER: ${{ inputs.deploy_user }}
-          SSH_PORT: ${{ inputs.deploy_port }}
-          DEPLOY_PROJECT: ${{ inputs.project }}
+          SSH_HOST: ${{ needs.plan.outputs.host }}
+          SSH_USER: ${{ needs.plan.outputs.user }}
+          SSH_PORT: ${{ needs.plan.outputs.port }}
+          DEPLOY_PROJECT: ${{ needs.plan.outputs.project }}
         shell: bash
         run: |
           if [[ -f "$HOME/.ssh/bluegreen" ]]; then

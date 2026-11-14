@@ -65,10 +65,11 @@ bluegreen configure
 bluegreen config check
 ```
 
-The guided CLI prompts for the project identifier, application hostname, service and container port. Automation can pass the same values without prompts:
+The guided CLI configures the project identifier, application hostname, container port, OCI registry and optional SSH deployment. Automation can pass the same non-secret values without prompts:
 
 ```bash
-bluegreen configure --project myapp --host api.example.com --service api --port 8000
+bluegreen configure --project myapp --host api.example.com --service api --port 8000 \
+  --registry-host ghcr.io --registry-repository company/myapp --registry-username publisher
 ```
 
 All projects use `deploy/bluegreen.yml`:
@@ -80,9 +81,15 @@ routes:
   - host: api.example.com
     service: api
     port: 8000
+registry:
+  host: ghcr.io
+  repository: company/myapp
+  username: publisher
 ```
 
-The file also contains optional OpenBao KV references. Legacy `deploy/routes.json` and `deploy/secrets.json` are rejected rather than silently ignored: move their configuration into the new YAML before deploying. Docker Compose retains service definitions, persistent volumes and networking. The immutable release JSON remains a runtime input (image digests and version), and the engine rejects a release whose project or routes differ from the YAML contract. `bluegreen config export` emits only project and routes as JSON for reusable CI workflows; it never includes secret references or values.
+To enable remote deployment, add the verified SSH target to the same configuration with `bluegreen configure --deploy-host ... --deploy-user ... --deploy-port ... --deploy-known-hosts ...`. Its `deployment` block is absent (and deployment disabled) until configured. The `known_hosts` value is the verified **public** SSH host key; never store the private SSH key here.
+
+The file also contains optional OpenBao KV references. Legacy `deploy/routes.json` and `deploy/secrets.json` are rejected rather than silently ignored: move their configuration into the new YAML before deploying. Docker Compose retains service definitions, persistent volumes and networking. The immutable release JSON remains a runtime input (image digests and version), and the engine rejects a release whose project or routes differ from the YAML contract. `bluegreen config export` validates the OCI registry configuration and emits project, routes, registry and optional deployment settings as JSON for the reusable workflows. It never includes OpenBao references, tokens or SSH private keys.
 
 Set the environment variables required by the generated Compose files. Application images use per-service variables such as `API_IMAGE` so that releases can provide immutable image references. Host-published application ports are converted into container-only exposed ports; shared infrastructure remains outside the Blue/Green slots.
 
@@ -92,18 +99,11 @@ The initializer does not start containers. It rejects configurations that cannot
 
 A published GitHub Release builds every application service with a `build` definition in `deploy/compose.yml`. The images are pushed to the configured OCI registry with the release tag. Each resulting image digest is uploaded as a workflow artifact for later deployment.
 
-Configure these values under **Settings → Secrets and variables → Actions** in the consuming GitHub repository.
+Set the OCI destination and publishing username through `bluegreen configure`. The values are stored only in `deploy/bluegreen.yml`, shared with the deployment workflow. The registry password or token is the standardized `OCI_REGISTRY_TOKEN` GitHub Actions secret.
 
-| Name | GitHub setting | Example | Description |
-| --- | --- | --- | --- |
-| `OCI_REGISTRY_HOST` | Variable | `ghcr.io` | OCI registry hostname, without `https://`. |
-| `OCI_REGISTRY_REPOSITORY` | Variable | `company/project` | Repository path and image-name prefix within the registry. |
-| `OCI_REGISTRY_USERNAME` | Variable | `ci-publisher` | Account that authenticates to the registry; it is not the Git commit author. |
-| `OCI_REGISTRY_TOKEN` | Secret | *(registry access token)* | Credential authorized to push images. Never commit its value. |
+For a Compose service named `backend` and a release tagged `v1.2.0`, `registry.host: ghcr.io` and `registry.repository: company/myapp` publish `ghcr.io/company/myapp-backend:v1.2.0`. Immutable image digests are recorded for deployment.
 
-For a Compose service named `backend` and a release tagged `v1.2.0`, the example above publishes `ghcr.io/company/project-backend:v1.2.0`. The workflow also records the immutable image digest used by deployments.
-
-`ghcr.io` is an example, **not a default**. Supply the hostname and repository path of your chosen OCI-compatible registry.
+`ghcr.io` is an example, not a default; the CLI requires an explicitly configured OCI destination.
 
 The generated workflow calls the shared publisher at a fixed commit for reproducibility. Publishing does not require deployment credentials. Once remote deployment is enabled and configured, the release workflow can deploy the published image digests.
 
@@ -118,21 +118,18 @@ bluegreen deploy --dir . --release release.json --env-file .env
 bluegreen rollback --dir . --project myapp --env-file .env
 ```
 
-The reusable remote workflow transfers the deployment bundle, a pinned Linux CLI binary, the image-digest manifest and the runtime environment. Configure the following values in **Settings → Secrets and variables → Actions** of the consuming repository:
+The reusable remote workflow transfers the deployment bundle, a pinned Linux CLI binary and the image-digest manifest. It reads the optional SSH target and verified public host key from `deploy/bluegreen.yml`. If no deployment target is configured, the deployment job is skipped after publishing.
 
-| Name | GitHub setting | Example | Description |
-| --- | --- | --- | --- |
-| `DEPLOY_ENABLED` | Variable | `true` | Enables remote deployment when set to `true`. |
-| `DEPLOY_PROJECT` | Variable | `myapp` | Unique deployment identifier on the server. |
-| `DEPLOY_HOST` | Variable | `203.0.113.10` | Hostname or IP address of the Docker server. |
-| `DEPLOY_PORT` | Variable | `22` | SSH port. |
-| `DEPLOY_USER` | Variable | `deploy` | SSH account used to run Docker commands. |
-| `DEPLOY_SSH_KNOWN_HOSTS` | Variable | `203.0.113.10 ssh-ed25519 AAAA…` | Verified SSH host-key entry in `known_hosts` format. The example is abbreviated, not a valid key. |
-| `SERVER_SSH_PRIVATE_KEY` | Secret | *(SSH private key)* | Private key used to authenticate to the deployment server. |
-| `OCI_REGISTRY_PULL_USERNAME` | Secret (optional) | `ci-reader` | Account authorized to download private OCI images. |
-| `OCI_REGISTRY_PULL_TOKEN` | Secret (optional) | *(read-only registry token)* | Credential for downloading private OCI images. |
+The same GitHub Actions secret names are used in every consuming repository:
 
-The two `OCI_REGISTRY_PULL_*` secrets are required **only for private images**. For public images, leave both unset. The publisher's `OCI_REGISTRY_TOKEN` is not forwarded to the deployment server.
+| Secret | Purpose |
+| --- | --- |
+| `OCI_REGISTRY_TOKEN` | Token with permission to publish the release images. |
+| `SERVER_SSH_PRIVATE_KEY` | SSH private key, required only when remote deployment is enabled. |
+| `OCI_REGISTRY_PULL_USERNAME` | Optional registry reader identity for private images. |
+| `OCI_REGISTRY_PULL_TOKEN` | Optional read-only registry token for private images. |
+
+Private images require **both** pull credentials. For public images they can remain unset. The publishing token is never forwarded to the server. There are no repository-specific GitHub Actions variables for the OCI destination, project name or deployment host.
 
 The deployment server retains its own non-secret Compose `.env` file in the deployment working directory. GitHub Actions neither uploads nor overwrites it; `DEPLOY_ENV` is no longer a GitHub secret. Set network, Caddy and port variables in that server-side file. Application credentials belong in OpenBao.
 

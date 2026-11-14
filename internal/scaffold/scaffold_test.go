@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -164,54 +165,34 @@ func TestFindSourceAmbiguity(t *testing.T) {
 	}
 }
 
-func TestPublishedWorkflowUsesRegistryContract(t *testing.T) {
-    files, err := Generate(Options{})
-    if err != nil { t.Fatal(err) }
-    workflow := find(files, ".github/workflows/release.yml")
-    for _, expected := range []string{
+func TestPublishedWorkflowUsesProjectContract(t *testing.T) {
+    files,err:=Generate(Options{})
+    if err!=nil{t.Fatal(err)}
+    workflow:=find(files,".github/workflows/release.yml")
+    for _,expected:=range []string{
         "on:", "types: [published]",
-        "vars.OCI_REGISTRY_HOST", "vars.OCI_REGISTRY_REPOSITORY", "vars.OCI_REGISTRY_USERNAME",
-        "secrets.OCI_REGISTRY_TOKEN", "github.event.release.tag_name",
+        "secrets.OCI_REGISTRY_TOKEN","secrets.SERVER_SSH_PRIVATE_KEY",
+        "secrets.OCI_REGISTRY_PULL_TOKEN","secrets.OCI_REGISTRY_PULL_USERNAME",
+        "github.event.release.tag_name",
         "docker-blue-green/.github/workflows/publish-images.yml@",
+        "docker-blue-green/.github/workflows/deploy-remote.yml@",
+        "engine_ref:",
     } {
-        if !strings.Contains(workflow, expected) {
-            t.Errorf("missing %q in release workflow", expected)
-        }
+        if !strings.Contains(workflow,expected){t.Errorf("missing %q in workflow",expected)}
     }
-    releaseParts := strings.Split(workflow, "\n  deploy:\n")
-    if len(releaseParts) != 2 {
-        t.Fatal("expected separate publish and deploy jobs")
-    }
-    deployJob := releaseParts[1]
-    for _, unexpected := range []string{
-        "vars.OCI_REGISTRY_HOST",
-        "vars.OCI_REGISTRY_REPOSITORY",
-        "vars.OCI_REGISTRY_USERNAME",
-        "secrets.OCI_REGISTRY_TOKEN",
-        "oci_registry_host:",
-        "oci_registry_repository:",
-        "oci_registry_username:",
+    for _,obsolete:=range []string{
+        "vars.","oci_registry_host:","oci_registry_repository:","oci_registry_username:",
+        "deploy_host:","deploy_user:","deploy_port:","deploy_ssh_known_hosts:",
+        "DEPLOY_ENV","DEPLOY_SSH_PRIVATE_KEY",
     } {
-        if strings.Contains(deployJob, unexpected) {
-            t.Errorf("deploy job repeats publishing configuration %q", unexpected)
-        }
+        if strings.Contains(workflow,obsolete){t.Errorf("workflow still duplicates %q",obsolete)}
     }
-    for _, required := range []string{"secrets.OCI_REGISTRY_PULL_USERNAME", "secrets.OCI_REGISTRY_PULL_TOKEN", "secrets.SERVER_SSH_PRIVATE_KEY"} {
-        if !strings.Contains(deployJob, required) {
-            t.Errorf("deploy job missing optional private registry credential %q", required)
-        }
+    if strings.Contains(workflow,"@main"){t.Fatal("reusable workflows must use immutable commits")}
+    engine:=regexp.MustCompile(`engine_ref: ([0-9a-f]{40})`)
+    refs:=engine.FindAllStringSubmatch(workflow,-1)
+    if len(refs)!=2 || refs[0][1]!=refs[1][1]{
+        t.Fatalf("publishing and deployment must use the same immutable engine: %v",refs)
     }
-    for _, obsolete := range []string{"OCI_IMAGE_PREFIX", "OCI_PUSH_USERNAME", "GIT_REGISTRY_TOKEN", "OCI_PULL_USERNAME", "OCI_PULL_TOKEN"} {
-        if strings.Contains(workflow, obsolete) {
-            t.Errorf("obsolete OCI variable in generated workflow: %q", obsolete)
-        }
-    }
-    for _, forbidden := range []string{"secrets.DEPLOY_ENV", "secrets.DEPLOY_SSH_PRIVATE_KEY"} {
-        if strings.Contains(workflow, forbidden) {
-            t.Errorf("obsolete deployment secret in release workflow: %s", forbidden)
-        }
-    }
-    if strings.Contains(workflow, "publish-images.yml@main") {
-        t.Fatal("reusable workflow must be pinned to an immutable commit")
-    }
+    pinned:=strings.Count(workflow,"@"+refs[0][1])
+    if pinned!=2{t.Fatalf("reusable workflows must use the same pinned engine; got %d",pinned)}
 }
