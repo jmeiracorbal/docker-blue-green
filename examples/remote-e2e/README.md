@@ -80,7 +80,17 @@ that state and the HTTP response, not solely against a successful process exit.
 TLS uses Caddy's local testing certificate; `--insecure` is limited to this
 loopback-only fixture.
 
-**Scope:** This first stage provides a testable fixture and a target contract.
-It does not provision the VM, set credentials, publish OCI releases, or assert
-that the full remote end-to-end path has run. Those execution checks belong to
-the next stage of PR #4.
+## CI SSH integration test
+
+The `ssh-e2e` job runs `scripts/test-ssh-e2e.sh` on a disposable
+GitHub-hosted Linux runner. It creates an SSH server and a local OCI registry
+on that runner, pushes three distinct digest-pinned application images and
+performs deployment through an authenticated SSH session. It checks both
+lifecycle failure boundaries, safe retry, Blue-Green route switching, and
+explicit rollback through Caddy.
+
+The test intentionally uses SSH over loopback and does not require or store
+any credentials for an external host. It validates SSH and container behavior,
+but it **does not** prove that the reusable publish/deploy GitHub workflows
+succeed against an independent VM. That host-specific check remains separate
+and must be completed before production use.
