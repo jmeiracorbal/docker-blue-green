@@ -26,7 +26,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/bluegreen-smoke"
           ./bluegreen init --dir "$RUNNER_TEMP/bluegreen-smoke"
-          ./bluegreen configure --dir "$RUNNER_TEMP/bluegreen-smoke" --project smoke --host app.localhost --service app --port 8080
+          ./bluegreen configure --dir "$RUNNER_TEMP/bluegreen-smoke" --project smoke --host app.localhost --service app --port 8080 --registry-host ghcr.io --registry-repository example/smoke --registry-username ci-publisher
           ./bluegreen config check --dir "$RUNNER_TEMP/bluegreen-smoke"
           ./bluegreen config export --dir "$RUNNER_TEMP/bluegreen-smoke" | jq -e '.project == "smoke" and .routes[0].service == "app"'
           test -s "$RUNNER_TEMP/bluegreen-smoke/.github/workflows/release.yml"

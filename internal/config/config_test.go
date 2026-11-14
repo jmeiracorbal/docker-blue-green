@@ -1,6 +1,7 @@
 package config
 
 import (
+    "encoding/base64"
     "os"
     "path/filepath"
     "strings"
@@ -15,6 +16,9 @@ func TestProjectConfigRoundTrip(t *testing.T) {
         Version:1,
         Project:"myapp",
         Routes:[]Route{{Host:"api.example.com",Service:"api",Port:8000}},
+        Registry:&Registry{Host:"ghcr.io",Repository:"team/myapp",Username:"ci-publisher"},
+        Deployment:&Deployment{Enabled:true,Host:"example.com",User:"deploy",Port:22,
+            KnownHosts:"example.com ssh-ed25519 "+base64.StdEncoding.EncodeToString([]byte("verified-host-key-for-ci"))},
         OpenBao:&OpenBao{Mount:"kv",Secrets:[]openbao.Reference{{
             Service:"api",Name:"db_password",Path:"database",Field:"password",
         }}},
@@ -33,7 +37,8 @@ func TestProjectConfigRoundTrip(t *testing.T) {
     data,err:=parsed.Export()
     if err!=nil{t.Fatal(err)}
     if strings.Contains(string(data),"database") || strings.Contains(string(data),"db_password") ||
-        !strings.Contains(string(data),"api.example.com") {
+        !strings.Contains(string(data),"api.example.com") ||
+        !strings.Contains(string(data),"ghcr.io") || !strings.Contains(string(data),"example.com") {
         t.Fatalf("public workflow export is unsafe: %s",data)
     }
 }
@@ -43,6 +48,11 @@ func TestRejectsUnknownAndUnsafeConfiguration(t *testing.T) {
         "version: 2\nproject: demo\nroutes: []\n",
         "version: 1\nproject: ../escape\nroutes: []\n",
         "version: 1\nproject: demo\nroutes: []\nsecret_value: unsafe\n",
+        "version: 1\nproject: demo\nroutes: []\nregistry:\n  host: insecure host\n  repository: company/app\n  username: deploy\n",
+        "version: 1\nproject: demo\nroutes: []\nregistry:\n  host: ghcr.io\n  repository: ../foreign\n  username: deploy\n",
+        "version: 1\nproject: demo\nroutes: []\nregistry:\n  host: ghcr.io\n  repository: company/app\n  username: deploy\n  token: leaked-credential\n",
+        "version: 1\nproject: demo\nroutes: []\ndeployment:\n  enabled: true\n  host: example.com\n  user: deploy\n  port: 22\n  known_hosts: attacker.com ssh-ed25519 eHl6eHl6eHl6eHl6eHl6\n",
+        "version: 1\nproject: demo\nroutes: []\ndeployment:\n  enabled: false\n  host: example.com\n",
         "version: 1\nproject: demo\nroutes: []\n---\nversion: 1\n",
         "version: 1\nproject: demo\nroutes:\n - host: api.example.com\n   service: api\n   port: 80\n - host: API.EXAMPLE.COM\n   service: api\n   port: 80\n",
         "version: 1\nproject: demo\nroutes: []\nopenbao:\n  mount: kv\n  secrets:\n    - service: api\n      name: db_pass\n      path: ../foreign\n      field: password\n",
@@ -91,4 +101,13 @@ func TestRejectLegacySplitConfiguration(t *testing.T) {
     if _,err:=Load(root);err==nil || !strings.Contains(err.Error(),"obsolete"){
         t.Fatalf("silently ignored old secrets.json: %v",err)
     }
+}
+
+func TestPublicExportRequiresRegistry(t *testing.T) {
+    cfg:=Document{Version:1,Project:"demo",Routes:[]Route{{Host:"demo.example.com",Service:"app",Port:80}}}
+    if _,err:=cfg.Export();err==nil{t.Fatal("workflow export accepted absent OCI configuration")}
+    cfg.Registry=&Registry{Host:"ghcr.io",Repository:"demo/image",Username:"publisher"}
+    exported,err:=cfg.Export()
+    if err!=nil{t.Fatal(err)}
+    if !strings.Contains(string(exported),`"enabled":false`){t.Fatalf("deployment unexpectedly enabled: %s",exported)}
 }
