@@ -171,7 +171,7 @@ func TestPublishedWorkflowUsesProjectContract(t *testing.T) {
     workflow:=find(files,".github/workflows/release.yml")
     for _,expected:=range []string{
         "on:", "types: [published]",
-        "secrets.OCI_REGISTRY_TOKEN","secrets.SERVER_SSH_PRIVATE_KEY",
+        "secrets.GITHUB_TOKEN","secrets.SERVER_SSH_PRIVATE_KEY",
         "secrets.OCI_REGISTRY_PULL_TOKEN","secrets.OCI_REGISTRY_PULL_USERNAME",
         "github.event.release.tag_name",
         "docker-blue-green/.github/workflows/publish-images.yml@",
@@ -209,11 +209,9 @@ func TestGeneratedRequiredBlueGreenWorkflowAndCIEnv(t *testing.T) {
         "    needs: [validate]",
         "    if: ${{ always() }}",
         "    name: blue-green",
-        "bluegreen-validation",
         "validate-consumer.yml@",
         "engine_ref:",
     } {
-        if expected=="bluegreen-validation" {continue}
         if !strings.Contains(workflow,expected){t.Errorf("generated workflow lacks %q",expected)}
     }
     if strings.Contains(workflow,"@main"){t.Fatal("workflow must pin a revision")}
