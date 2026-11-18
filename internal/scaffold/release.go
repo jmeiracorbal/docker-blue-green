@@ -23,28 +23,28 @@ permissions:
 
 jobs:
   validate:
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/validate-consumer.yml@e82b74c860c0bf6db5bd116f26a411617f17afdf
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/validate-consumer.yml@adfe87ec60f72310afbae0820065bdb6ed5f0072
     with:
-      engine_ref: e82b74c860c0bf6db5bd116f26a411617f17afdf
+      engine_ref: adfe87ec60f72310afbae0820065bdb6ed5f0072
       validation_env_file: .github/blue-green.env
 
   publish:
     needs: validate
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@e82b74c860c0bf6db5bd116f26a411617f17afdf
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@adfe87ec60f72310afbae0820065bdb6ed5f0072
     with:
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
-      engine_ref: e82b74c860c0bf6db5bd116f26a411617f17afdf
+      engine_ref: adfe87ec60f72310afbae0820065bdb6ed5f0072
     secrets:
       OCI_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   deploy:
     needs: publish
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@e82b74c860c0bf6db5bd116f26a411617f17afdf
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@adfe87ec60f72310afbae0820065bdb6ed5f0072
     with:
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
-      engine_ref: e82b74c860c0bf6db5bd116f26a411617f17afdf
+      engine_ref: adfe87ec60f72310afbae0820065bdb6ed5f0072
     secrets:
       SERVER_SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
       OCI_REGISTRY_PULL_USERNAME: ${{ secrets.OCI_REGISTRY_PULL_USERNAME }}
@@ -69,9 +69,9 @@ permissions:
 
 jobs:
   validate:
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/validate-consumer.yml@e82b74c860c0bf6db5bd116f26a411617f17afdf
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/validate-consumer.yml@adfe87ec60f72310afbae0820065bdb6ed5f0072
     with:
-      engine_ref: e82b74c860c0bf6db5bd116f26a411617f17afdf
+      engine_ref: adfe87ec60f72310afbae0820065bdb6ed5f0072
       validation_env_file: .github/blue-green.env
 
   blue-green:

@@ -229,3 +229,11 @@ func TestGeneratedRequiredBlueGreenWorkflowAndCIEnv(t *testing.T) {
     if err:=os.WriteFile(filepath.Join(root,".github","workflows","blue-green.yml"),[]byte("changed"),0644);err!=nil{t.Fatal(err)}
     if err:=Write(root,files);err==nil{t.Fatal("generated workflow unexpectedly overwritten")}
 }
+
+func TestOCIReusableWorkflowAllowsPackagePublication(t *testing.T){
+    content,err:=os.ReadFile(filepath.Join("..","..",".github","workflows","publish-images.yml"))
+    if err!=nil{t.Fatal(err)}
+    if !strings.Contains(string(content),"  publish:\n    needs: discover\n    permissions:\n      contents: read\n      packages: write\n"){
+        t.Fatal("reusable publisher must request packages: write for GITHUB_TOKEN")
+    }
+}
