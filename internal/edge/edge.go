@@ -19,13 +19,13 @@ const (
     compose = `name: bluegreen-edge
 services:
   caddy:
-    image: "@{CADDY_IMAGE:?}"
+    image: "${CADDY_IMAGE:?}"
     environment:
-      CADDY_ACME_EMAIL: "@{CADDY_ACME_EMAIL:?}"
+      CADDY_ACME_EMAIL: "${CADDY_ACME_EMAIL:?}"
     ports:
-      - "@{HTTP_PORT:?}:80/tcp"
-      - "@{HTTPS_PORT:?}:443/tcp"
-      - "@{HTTPS_PORT:?}:443/udp"
+      - "${HTTP_PORT:?}:80/tcp"
+      - "${HTTPS_PORT:?}:443/tcp"
+      - "${HTTPS_PORT:?}:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./apps:/etc/caddy/apps:ro
@@ -35,7 +35,7 @@ services:
     networks: [edge]
 networks:
   edge:
-    name: "@{DEPLOY_NETWORK:?}"
+    name: "${DEPLOY_NETWORK:?}"
 volumes:
   caddy_data: {}
   caddy_config: {}
