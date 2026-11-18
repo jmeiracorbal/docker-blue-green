@@ -240,7 +240,7 @@ func TestTwoProjectsShareOneEdgeAndPreserveIndependentRoutes(t *testing.T){
         if err:=os.MkdirAll(filepath.Join(root,"deploy"),0755);err!=nil{t.Fatal(err)}
         cfg:=config.Document{Version:1,Project:project}
         if err:=config.Save(root,cfg);err!=nil{t.Fatal(err)}
-        doc:="services:\n  api:\n    image: ${API_IMAGE}\n    healthcheck:\n      test: [\"CMD\", \"true\"]\n    networks:\n      edge:\n        aliases: [${PROJECT_NAME}-${DEPLOYMENT_SLOT}-api]\nnetworks:\n  edge:\n    external: true\n    name: ${DEPLOY_NETWORK}\n"
+        doc:="services:\n  api:\n    image: ${API_IMAGE}\n    healthcheck:\n      test: [\"CMD\", \"true\"]\n    networks:\n      edge:\n        aliases: [\"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-api\"]\nnetworks:\n  edge:\n    external: true\n    name: ${DEPLOY_NETWORK}\n"
         path:=filepath.Join(root,"deploy","compose.yml")
         if err:=os.WriteFile(path,[]byte(doc),0644);err!=nil{t.Fatal(err)}
         routes:=[]config.Route{{Host:host,Service:"api",Port:8080}}
