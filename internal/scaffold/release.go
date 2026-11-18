@@ -6,7 +6,7 @@ import (
     "strings"
 )
 
-const engineRevision = "d0b4b76f0462a3e4a576aebeb9b64c6747730653"
+const engineRevision = "e82b74c860c0bf6db5bd116f26a411617f17afdf"
 
 // publishWorkflowFile installs a thin, version-pinned caller for the shared
 // registry publishing workflow. No registry credentials are stored in the repository.
@@ -25,21 +25,21 @@ permissions:
 
 jobs:
   publish:
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@d0b4b76f0462a3e4a576aebeb9b64c6747730653
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@e82b74c860c0bf6db5bd116f26a411617f17afdf
     with:
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
-      engine_ref: d0b4b76f0462a3e4a576aebeb9b64c6747730653
+      engine_ref: e82b74c860c0bf6db5bd116f26a411617f17afdf
     secrets:
       OCI_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   deploy:
     needs: publish
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@d0b4b76f0462a3e4a576aebeb9b64c6747730653
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@e82b74c860c0bf6db5bd116f26a411617f17afdf
     with:
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
-      engine_ref: d0b4b76f0462a3e4a576aebeb9b64c6747730653
+      engine_ref: e82b74c860c0bf6db5bd116f26a411617f17afdf
     secrets:
       SERVER_SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
       OCI_REGISTRY_PULL_USERNAME: ${{ secrets.OCI_REGISTRY_PULL_USERNAME }}
@@ -64,9 +64,9 @@ permissions:
 
 jobs:
   validate:
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/validate-consumer.yml@d0b4b76f0462a3e4a576aebeb9b64c6747730653
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/validate-consumer.yml@e82b74c860c0bf6db5bd116f26a411617f17afdf
     with:
-      engine_ref: d0b4b76f0462a3e4a576aebeb9b64c6747730653
+      engine_ref: e82b74c860c0bf6db5bd116f26a411617f17afdf
       validation_env_file: .github/blue-green.env
 
   blue-green:
