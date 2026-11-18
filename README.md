@@ -124,6 +124,19 @@ Set the environment variables required by the generated Compose files. Applicati
 
 The initializer does not start containers. It rejects configurations that cannot be separated safely, and does not overwrite customized deployment files.
 
+
+### Persistent service ingress
+
+A persistent infrastructure service such as an S3-compatible object store may
+explicitly opt into shared Edge ingress with `shared: true` in the application's
+`x-bluegreen.ingress` contract. The engine routes it to
+`<project>-infrastructure-<service>` on the shared Edge Docker network; unlike
+application routes, its destination does not change between Blue and Green.
+Only the explicitly declared infrastructure service must join the Edge network
+with that alias. Keep databases, queues and private services on internal networks
+unless there is a deliberate, justified ingress declaration. This does not
+publish ports on the host or create per-application Caddy instances.
+
 ## Publishing images
 
 A published GitHub Release builds every application service with a `build` definition in `deploy/compose.yml`. The images are pushed to the configured OCI registry with the release tag. Each resulting image digest is uploaded as a workflow artifact for later deployment.

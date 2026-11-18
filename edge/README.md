@@ -9,3 +9,15 @@ The host-wide lock serializes provisioning and route publication across independ
 The shared Edge environment uses: `CADDY_IMAGE`, `CADDY_ACME_EMAIL`, `DEPLOY_NETWORK`, `HTTP_PORT` and `HTTPS_PORT`. The first project establishes these settings; later projects must agree. Changes to shared configuration or Caddy versions are separate, explicit infrastructure operations.
 
 Application infrastructure Compose files must not contain their own `caddy` service. An application service that should be reachable through Edge must declare its routing under `x-bluegreen.ingress` in `deploy/compose.yml` and connect to the shared Docker network. The generated route targets the selected application's Blue/Green network alias.
+
+### Persistent service ingress
+
+A persistent infrastructure service such as an S3-compatible object store may
+explicitly opt into shared Edge ingress with `shared: true` in the application's
+`x-bluegreen.ingress` contract. The engine routes it to
+`<project>-infrastructure-<service>` on the shared Edge Docker network; unlike
+application routes, its destination does not change between Blue and Green.
+Only the explicitly declared infrastructure service must join the Edge network
+with that alias. Keep databases, queues and private services on internal networks
+unless there is a deliberate, justified ingress declaration. This does not
+publish ports on the host or create per-application Caddy instances.

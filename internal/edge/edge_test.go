@@ -63,3 +63,18 @@ func TestFailedReloadRestoresOriginal(t *testing.T){
  b,_:=os.ReadFile(m.RouteFile("app"))
  if !strings.Contains(string(b),"app-blue-api:80"){t.Fatal(string(b))}
 }
+
+func TestPersistentInfrastructureIngressDoesNotChangeSlots(t *testing.T) {
+    m:=testManager(t)
+    ctx:=context.Background()
+    if err:=m.Ensure(ctx);err!=nil{t.Fatal(err)}
+    routes:=[]Route{{Host:"storage.example.com",Service:"rustfs",Port:9000,Shared:true}}
+    if err:=m.Publish(ctx,"demo","blue",routes);err!=nil{t.Fatal(err)}
+    first,err:=os.ReadFile(m.RouteFile("demo"))
+    if err!=nil{t.Fatal(err)}
+    if !strings.Contains(string(first),"demo-infrastructure-rustfs:9000"){t.Fatal(string(first))}
+    if err:=m.Publish(ctx,"demo","green",routes);err!=nil{t.Fatal(err)}
+    second,err:=os.ReadFile(m.RouteFile("demo"))
+    if err!=nil{t.Fatal(err)}
+    if string(first)!=string(second){t.Fatal("persistent route changed between slots")}
+}

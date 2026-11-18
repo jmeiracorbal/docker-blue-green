@@ -28,6 +28,7 @@ type Route struct {
 	Host    string `json:"host"`
 	Service string `json:"service"`
 	Port    int    `json:"port"`
+    Shared bool `json:"shared,omitempty"`
 }
 
 type Release struct {
@@ -151,9 +152,11 @@ func Validate(r Release) error {
 		if !servicePattern.MatchString(rt.Service) {
 			return fmt.Errorf("invalid routed service %q", rt.Service)
 		}
-		if _, ok := r.Images[rt.Service]; !ok {
-			return fmt.Errorf("route for %q has no image", rt.Service)
-		}
+		if !rt.Shared {
+            if _,ok:=r.Images[rt.Service];!ok{return fmt.Errorf("route for %q has no image",rt.Service)}
+        }else if _,ok:=r.Images[rt.Service];ok {
+            return fmt.Errorf("shared ingress %q cannot target a versioned application image",rt.Host)
+        }
 		if rt.Port < 1 || rt.Port > 65535 {
 			return fmt.Errorf("invalid route port %d", rt.Port)
 		}
@@ -289,7 +292,7 @@ func (c Controller) edge(root string) edge.Manager {
 }
 func (c Controller) setRoutes(ctx context.Context,root string,r Release,slot string,routes []Route) error {
     items:=make([]edge.Route,0,len(routes))
-    for _,route:=range routes {items=append(items,edge.Route{Host:route.Host,Service:route.Service,Port:route.Port})}
+    for _,route:=range routes {items=append(items,edge.Route{Host:route.Host,Service:route.Service,Port:route.Port,Shared:route.Shared})}
     return c.edge(root).Publish(ctx,r.Project,slot,items)
 }
 func hash(r Release) string {

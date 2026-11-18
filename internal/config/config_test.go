@@ -130,3 +130,19 @@ func TestComposeIngressIsTheOnlyRouteAuthority(t *testing.T){
  if err:=os.WriteFile(Path(root),[]byte("version: 1\nproject: demo\nroutes:\n  - host: forbidden.example.com\n    service: api\n    port: 80\n"),0644);err!=nil{t.Fatal(err)}
  if _,err:=Load(root);err==nil{t.Fatal("legacy dual route ownership accepted")}
 }
+
+func TestSharedIngressRequiresInfrastructureService(t *testing.T){
+ root:=t.TempDir()
+ if err:=Save(root,Document{Version:1,Project:"demo"});err!=nil{t.Fatal(err)}
+ compose:=filepath.Join(root,"deploy","compose.yml")
+ if err:=os.WriteFile(compose,[]byte("services:\n  api:\n    image: nginx:alpine\n"),0644);err!=nil{t.Fatal(err)}
+ if err:=SaveIngress(root,[]Route{{Host:"api.example.com",Service:"api",Port:80},
+     {Host:"storage.example.com",Service:"rustfs",Port:9000,Shared:true}});err!=nil{t.Fatal(err)}
+ cfg,err:=Load(root);if err!=nil{t.Fatal(err)}
+ if err:=cfg.ValidateApplicationServices(root);err==nil{t.Fatal("shared route accepted missing infrastructure")}
+ path:=filepath.Join(root,"deploy","infrastructure","compose.yml")
+ if err:=os.MkdirAll(filepath.Dir(path),0755);err!=nil{t.Fatal(err)}
+ if err:=os.WriteFile(path,[]byte("services:\n  rustfs:\n    image: rustfs/rustfs:1\n    networks:\n      edge:\n        aliases: [\"${PROJECT_NAME}-infrastructure-rustfs\"]\nnetworks:\n  edge:\n    external: true\n    name: \"${DEPLOY_NETWORK}\"\n"),0644);err!=nil{t.Fatal(err)}
+ if err:=cfg.ValidateApplicationServices(root);err!=nil{t.Fatal(err)}
+ if err:=cfg.Validate(true);err!=nil{t.Fatal(err)}
+}

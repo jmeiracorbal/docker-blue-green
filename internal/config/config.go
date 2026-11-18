@@ -35,6 +35,7 @@ type Route struct {
     Host string `yaml:"host" json:"host"`
     Service string `yaml:"service" json:"service"`
     Port int `yaml:"port" json:"port"`
+    Shared bool `yaml:"shared,omitempty" json:"shared,omitempty"`
 }
 
 // Registry contains only public OCI destination data, never credentials.
@@ -360,7 +361,17 @@ func (cfg Document) ValidateApplicationServices(root string) error {
     }
     if len(model.Services)==0{return errors.New("application Compose has no services")}
     for _,route:=range cfg.Routes{
-        if _,ok:=model.Services[route.Service];!ok{
+        if route.Shared {
+            infraPath:=filepath.Join(root,"deploy","infrastructure","compose.yml")
+            b,err:=os.ReadFile(infraPath)
+            if err!=nil{return fmt.Errorf("read infrastructure for shared ingress: %w",err)}
+            var infra struct {Services map[string]any `yaml:"services"`}
+            if err:=yaml.Unmarshal(b,&infra);err!=nil{return err}
+            if _,ok:=infra.Services[route.Service];!ok {
+                return fmt.Errorf("shared ingress %q refers to unknown infrastructure service %q",route.Host,route.Service)
+            }
+            if err:=validateSharedIngressNetwork(b,cfg.Project,route.Service);err!=nil{return err}
+        }else if _,ok:=model.Services[route.Service];!ok{
             return fmt.Errorf("route %q refers to an unknown application service %q",route.Host,route.Service)
         }
     }
@@ -405,4 +416,30 @@ func (cfg Document) ValidateInfrastructureServices(root string) error {
     if err:=yaml.Unmarshal(data,&model);err!=nil{return fmt.Errorf("parse project infrastructure Compose: %w",err)}
     if _,found:=model.Services["caddy"];found{return errors.New("per-project Caddy is forbidden; use shared Edge")}
     return nil
+}
+
+func validateSharedIngressNetwork(data []byte,project,service string)error{
+    var model struct{
+        Services map[string]any `yaml:"services"`
+        Networks map[string]any `yaml:"networks"`
+    }
+    if err:=yaml.Unmarshal(data,&model);err!=nil{return err}
+    raw,ok:=model.Services[service].(map[string]any)
+    if !ok{return errors.New("shared ingress service must be a mapping")}
+    networks,ok:=raw["networks"].(map[string]any)
+    if !ok{return fmt.Errorf("shared ingress service %q must declare an Edge network alias",service)}
+    expected:=project+"-infrastructure-"+service
+    variable:="${PROJECT_NAME}-infrastructure-"+service
+    for name,spec:=range networks{
+        top,ok:=model.Networks[name].(map[string]any)
+        if !ok||top["external"]!=true||top["name"]!="${DEPLOY_NETWORK}" {continue}
+        net,ok:=spec.(map[string]any)
+        if !ok {continue}
+        aliases,ok:=net["aliases"].([]any)
+        if !ok{continue}
+        for _,alias:=range aliases {
+            if alias==expected||alias==variable{return nil}
+        }
+    }
+    return fmt.Errorf("shared ingress service %q must join external DEPLOY_NETWORK with alias %s",service,expected)
 }

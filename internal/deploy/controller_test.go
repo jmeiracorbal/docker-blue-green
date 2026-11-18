@@ -219,3 +219,11 @@ func TestDeployRejectsReleaseConfigurationDrift(t *testing.T) {
     if err:=c.Deploy(context.Background(),wrongRoute);err==nil{t.Fatal("accepted route drift")}
     if len(runner.calls)!=0{t.Fatal("Docker was called for mismatched configuration")}
 }
+
+func TestReleaseSharedIngressIsNotAnApplicationImage(t *testing.T){
+ r:=release("v1")
+ r.Routes=append(r.Routes,Route{Host:"storage.example.com",Service:"rustfs",Port:9000,Shared:true})
+ if err:=Validate(r);err!=nil{t.Fatal(err)}
+ r.Routes[1].Shared=false
+ if err:=Validate(r);err==nil{t.Fatal("accepted unversioned route as an app")}
+}

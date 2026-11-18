@@ -405,12 +405,10 @@ func prepareNetworks(app, infra map[string]any, appServices, infraServices map[s
 				return err
 			}
 			if group.app {
-				net["bluegreen"] = map[string]any{
-					"aliases": []any{"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-" + name},
-				}
-			} else {
-				net["bluegreen"] = nil
-			}
+                net["bluegreen"]=map[string]any{"aliases":[]any{"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-"+name}}
+            }
+            // Stateful services stay off the public Edge network unless their
+            // Compose file explicitly attaches them with a shared ingress alias.
 			service["networks"] = net
 		}
 	}

@@ -37,6 +37,7 @@ type Route struct {
     Host string
     Service string
     Port int
+    Shared bool
 }
 type Manager struct {
     Root string
@@ -195,7 +196,9 @@ func render(project,slot string,routes []Route) ([]byte,error) {
         }
         if seen[host]{return nil,fmt.Errorf("duplicate Edge hostname %s",host)}
         seen[host]=true
-        fmt.Fprintf(&b,"%s {\n    encode zstd gzip\n    reverse_proxy %s-%s-%s:%d\n}\n\n",host,project,slot,route.Service,route.Port)
+        destination:=fmt.Sprintf("%s-%s-%s:%d",project,slot,route.Service,route.Port)
+        if route.Shared {destination=fmt.Sprintf("%s-infrastructure-%s:%d",project,route.Service,route.Port)}
+        fmt.Fprintf(&b,"%s {\n    encode zstd gzip\n    reverse_proxy %s\n}\n\n",host,destination)
     }
     return []byte(b.String()),nil
 }
