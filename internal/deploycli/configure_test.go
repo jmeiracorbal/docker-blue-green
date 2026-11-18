@@ -14,14 +14,21 @@ import (
 func prepareProject(t *testing.T,root string,service string) {
     t.Helper()
     if err:=os.MkdirAll(filepath.Join(root,"deploy"),0755);err!=nil{t.Fatal(err)}
-    compose:="services:\n  "+service+":\n    image: nginx:1.27-alpine\n"
+    compose:="services:\n  "+service+":\n    image: nginx:1.27-alpine\n    networks:\n      edge:\n        aliases: [\"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-"+service+"\"]\nnetworks:\n  edge:\n    external: true\n    name: \"${DEPLOY_NETWORK}\"\n"
     if err:=os.WriteFile(filepath.Join(root,"deploy","compose.yml"),[]byte(compose),0644);err!=nil{t.Fatal(err)}
+}
+
+
+func saveConfigured(root string,cfg config.Document) error {
+    if err:=config.Save(root,cfg);err!=nil{return err}
+    if len(cfg.Routes)>0{return config.SaveIngress(root,cfg.Routes)}
+    return nil
 }
 
 func TestConfigureUniformProjectManifest(t *testing.T) {
     root:=t.TempDir()
     prepareProject(t,root,"api")
-    if err:=config.Save(root,config.Document{Version:1});err!=nil{t.Fatal(err)}
+    if err:=saveConfigured(root,config.Document{Version:1});err!=nil{t.Fatal(err)}
     args:=[]string{"--dir",root,"--project","myapp","--host","api.example.com","--service","api","--port","8000",
         "--registry-host","ghcr.io","--registry-repository","team/myapp","--registry-username","ci-publisher"}
     var output bytes.Buffer
@@ -43,7 +50,7 @@ func TestConfigureUniformProjectManifest(t *testing.T) {
 func TestConfigureGuided(t *testing.T) {
     root:=t.TempDir()
     prepareProject(t,root,"web")
-    if err:=config.Save(root,config.Document{Version:1});err!=nil{t.Fatal(err)}
+    if err:=saveConfigured(root,config.Document{Version:1});err!=nil{t.Fatal(err)}
     answers:=strings.NewReader("myapp\napp.example.com\nweb\n3000\nghcr.io\nteam/myapp\npublisher\nno\n")
     var prompts bytes.Buffer
     if err:=Configure([]string{"--dir",root},answers,&prompts);err!=nil{t.Fatal(err)}
@@ -55,7 +62,7 @@ func TestConfigureGuided(t *testing.T) {
 func TestIncompleteConfigRejected(t *testing.T) {
     root:=t.TempDir()
     prepareProject(t,root,"api")
-    if err:=config.Save(root,config.Document{Version:1});err!=nil{t.Fatal(err)}
+    if err:=saveConfigured(root,config.Document{Version:1});err!=nil{t.Fatal(err)}
     if err:=Config([]string{"check","--dir",root},&bytes.Buffer{});err==nil{
         t.Fatal("accepted unfinished configuration")
     }
@@ -70,7 +77,7 @@ func TestIncompleteConfigRejected(t *testing.T) {
 func TestConfigureRemoteDeploymentAndDisable(t *testing.T) {
     root:=t.TempDir()
     prepareProject(t,root,"api")
-    if err:=config.Save(root,config.Document{Version:1,Project:"demo",Routes:[]config.Route{
+    if err:=saveConfigured(root,config.Document{Version:1,Project:"demo",Routes:[]config.Route{
         {Host:"api.example.com",Service:"api",Port:8000}},
         Registry:&config.Registry{Host:"ghcr.io",Repository:"team/demo",Username:"publisher"}});err!=nil{t.Fatal(err)}
     knownHost:="deploy.example.com ssh-ed25519 "+base64.StdEncoding.EncodeToString([]byte("verified-public-host-key-fixture"))
@@ -87,7 +94,7 @@ func TestConfigureRemoteDeploymentAndDisable(t *testing.T) {
 func TestRejectPartialRegistryAndRemoteFlags(t *testing.T) {
     root:=t.TempDir()
     prepareProject(t,root,"api")
-    if err:=config.Save(root,config.Document{Version:1,Project:"demo",
+    if err:=saveConfigured(root,config.Document{Version:1,Project:"demo",
         Routes:[]config.Route{{Host:"api.example.com",Service:"api",Port:8000}}});err!=nil{t.Fatal(err)}
     for _,args:=range [][]string{
         {"--dir",root,"--registry-host","ghcr.io"},
@@ -106,7 +113,7 @@ func TestConfigCheckRequiresRegistry(t *testing.T) {
     cfg:=config.Document{Version:1,Project:"demo",Routes:[]config.Route{
         {Host:"api.example.com",Service:"api",Port:8000},
     }}
-    if err:=config.Save(root,cfg);err!=nil{t.Fatal(err)}
+    if err:=saveConfigured(root,cfg);err!=nil{t.Fatal(err)}
     if err:=Config([]string{"check","--dir",root},&bytes.Buffer{});err==nil{
         t.Fatal("configuration was marked publishable without OCI registry")
     }

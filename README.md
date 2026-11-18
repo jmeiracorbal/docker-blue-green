@@ -41,7 +41,7 @@ The CLI discovers `compose.yaml`, `compose.yml`, `docker-compose.yaml` or `docke
 bluegreen init --dir /path/to/project --app api,frontend --infrastructure postgres,redis
 ```
 
-Select another input with `--compose path/to/file.yml`. If no Compose file exists, `init` creates a minimal application and Caddy configuration that can be customized.
+Select another input with `--compose path/to/file.yml`. If no Compose file exists, `init` creates a minimal application configuration that can be customized.
 
 The generated files are:
 
@@ -50,13 +50,12 @@ deploy/
 ├── compose.yml
 ├── bluegreen.yml
 └── infrastructure/
-    ├── compose.yml
-    └── caddy/
-        ├── Caddyfile
-        └── routes/
+    └── compose.yml  # only when stateful services are present
 .github/workflows/release.yml
 .env.example
 ```
+
+The engine itself owns the shared Edge directory and Caddy templates; **application scaffolds do not include a Caddy container**.
 
 Configure the single project-level contract after initialization:
 
@@ -72,28 +71,71 @@ bluegreen configure --project myapp --host api.example.com --service api --port 
   --registry-host ghcr.io --registry-repository company/myapp --registry-username publisher
 ```
 
-All projects use `deploy/bluegreen.yml`:
+The project identity, registry, lifecycle, deployment target, and OpenBao
+references belong to `deploy/bluegreen.yml`:
 
 ```yaml
 version: 1
 project: myapp
-routes:
-  - host: api.example.com
-    service: api
-    port: 8000
 registry:
   host: ghcr.io
   repository: company/myapp
   username: publisher
 ```
 
+Public routes are declared only in `deploy/compose.yml`, under the Compose
+extension `x-bluegreen.ingress`. The interactive `bluegreen configure` command
+updates this extension; it does not duplicate routes into `bluegreen.yml`:
+
+```yaml
+services:
+  api:
+    image: "${API_IMAGE}"
+    expose:
+      - "8000"
+    networks:
+      bluegreen:
+        aliases: ["${PROJECT_NAME}-${DEPLOYMENT_SLOT}-api"]
+
+networks:
+  bluegreen:
+    external: true
+    name: "${DEPLOY_NETWORK}"
+
+x-bluegreen:
+  ingress:
+    - host: api.example.com
+      service: api
+      port: 8000
+```
+
+The engine validates every ingress target against a versioned application
+service, then produces `<project>.caddy` within the host-wide Edge installation.
+It rejects the old `routes:` field in `deploy/bluegreen.yml` rather than
+silently retaining two routing authorities.
+
 To enable remote deployment, add the verified SSH target to the same configuration with `bluegreen configure --deploy-host ... --deploy-user ... --deploy-port ... --deploy-known-hosts ...`. Its `deployment` block is absent (and deployment disabled) until configured. The `known_hosts` value is the verified **public** SSH host key; never store the private SSH key here.
 
-The file also contains optional OpenBao KV references. Legacy `deploy/routes.json` and `deploy/secrets.json` are rejected rather than silently ignored: move their configuration into the new YAML before deploying. Docker Compose retains service definitions, persistent volumes and networking. The immutable release JSON remains a runtime input (image digests and version), and the engine rejects a release whose project or routes differ from the YAML contract. `bluegreen config export` validates the OCI registry configuration and emits project, routes, registry and optional deployment settings as JSON for the reusable workflows. It never includes OpenBao references, tokens or SSH private keys.
+The file also contains optional OpenBao KV references. Legacy `deploy/routes.json` and `deploy/secrets.json` are rejected rather than silently ignored: move their settings into the project contract before deploying. Docker Compose retains service definitions, persistent volumes and networking. The immutable release JSON remains a runtime input (image digests and version), and the engine rejects a release whose project or routes differ from the Compose ingress and project contract. `bluegreen config export` validates the OCI registry configuration and emits project, routes, registry and optional deployment settings as JSON for the reusable workflows. It never includes OpenBao references, tokens or SSH private keys.
+
+Set the environment variables required by the generated Compose files and the shared Edge installation. Edge is a single host-wide Caddy managed by bluegreen under the sibling `edge/` directory of the project deployment roots; each project owns exactly one `apps/<project>.caddy` route file. Shared Caddy and its network are provisioned/reconciled once, never created in an application's infrastructure Compose. All applications on a server must use identical Edge configuration (`DEPLOY_NETWORK`, `CADDY_IMAGE`, `CADDY_ACME_EMAIL`, `HTTP_PORT`, `HTTPS_PORT`); a mismatch fails explicitly. See [Edge](edge/README.md).
 
 Set the environment variables required by the generated Compose files. Application images use per-service variables such as `API_IMAGE` so that releases can provide immutable image references. Host-published application ports are converted into container-only exposed ports; shared infrastructure remains outside the Blue/Green slots.
 
 The initializer does not start containers. It rejects configurations that cannot be separated safely, and does not overwrite customized deployment files.
+
+
+### Persistent service ingress
+
+A persistent infrastructure service such as an S3-compatible object store may
+explicitly opt into shared Edge ingress with `shared: true` in the application's
+`x-bluegreen.ingress` contract. The engine routes it to
+`<project>-infrastructure-<service>` on the shared Edge Docker network; unlike
+application routes, its destination does not change between Blue and Green.
+Only the explicitly declared infrastructure service must join the Edge network
+with that alias. Keep databases, queues and private services on internal networks
+unless there is a deliberate, justified ingress declaration. This does not
+publish ports on the host or create per-application Caddy instances.
 
 ## Publishing images
 
@@ -109,7 +151,7 @@ The generated workflow calls the shared publisher at a fixed commit for reproduc
 
 ## Deploying
 
-Define the public hostnames, application service names and container ports using `bluegreen configure`, which writes `deploy/bluegreen.yml`. Every application container must have a working Docker healthcheck. Keep stateful services in `deploy/infrastructure/compose.yml`; migrations must remain compatible with the previously running application during a cutover.
+Define the public hostnames, application service names and container ports using `bluegreen configure`, which writes the `x-bluegreen.ingress` section of `deploy/compose.yml`. Every application container must have a working Docker healthcheck. Keep stateful services in `deploy/infrastructure/compose.yml`; migrations must remain compatible with the previously running application during a cutover.
 
 The CLI can deploy a release manifest on a Docker host:
 
@@ -135,7 +177,7 @@ The deployment server retains its own non-secret Compose `.env` file in the depl
 
 The deployment derives the registry hostname and exact image references from the release manifest; it does not need a second set of registry destination variables. No cloud-provider-specific identifiers are required.
 
-The remote workflow runs over verified SSH. Shared infrastructure remains up while the inactive application slot is prepared, then Caddy is reloaded only after the new containers pass their healthchecks. The previous slot is preserved for rollback. A full server-level end-to-end test must be performed before using the workflow for production traffic.
+The remote workflow runs over verified SSH. Shared Edge and project infrastructure remain up while the inactive application slot is prepared, then the shared Caddy is reloaded only after the new containers pass their healthchecks. The previous slot is preserved for rollback. A full server-level end-to-end test must be performed before using the workflow for production traffic.
 
 ## Declarative deployment lifecycle
 
@@ -166,7 +208,7 @@ to Docker Compose, without invoking a shell on the deployment host.
 
 Execution order:
 
-1. Start shared infrastructure, recover any interrupted deployment and
+1. Reconcile the server-wide Edge and project infrastructure, recover any interrupted deployment and
    prepare the inactive slot and OpenBao secret snapshot.
 2. Pull the immutable application images. For new application releases,
    run `before_start` steps sequentially, each in an ephemeral container

@@ -59,7 +59,11 @@ func TestDeployWithOpenBaoSecretsAndRollback(t *testing.T) {
 `),first.ActiveSecretOverlay) {t.Fatal("Compose did not use OpenBao overlay")}
     count:=len(runner.calls)
     if err:=c.Deploy(ctx,r);err!=nil {t.Fatal(err)}
-    if len(runner.calls)!=count {t.Fatal("redeployed unmodified secret version")}
+    for _,call:=range runner.calls[count:] {
+        if strings.Contains(call,filepath.Join(root,"deploy","compose.yml")) {
+            t.Fatal("redeployed unmodified application secret version")
+        }
+    }
     c.SecretResolver=secretResolver(2)
     if err:=c.Deploy(ctx,r);err!=nil {t.Fatal(err)}
     next,err:=readState(filepath.Join(root,".bluegreen"))

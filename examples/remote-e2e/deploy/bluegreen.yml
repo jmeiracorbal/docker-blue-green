@@ -1,9 +1,5 @@
 version: 1
 project: bge2e
-routes:
-  - host: e2e.localhost
-    service: app
-    port: 8080
 registry:
   host: ghcr.io
   repository: example/docker-blue-green-e2e

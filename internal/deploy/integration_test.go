@@ -82,30 +82,13 @@ networks:
   edge:
     external: true
     name: "${DEPLOY_NETWORK}"
+
+x-bluegreen:
+  ingress:
+    - host: app.localhost
+      service: app
+      port: 80
 `,
-		"deploy/infrastructure/compose.yml": `name: "${PROJECT_NAME}-infrastructure"
-services:
-  caddy:
-    image: "${CADDY_IMAGE}"
-    environment:
-      CADDY_ACME_EMAIL: "${CADDY_ACME_EMAIL}"
-    ports:
-      - "${HTTP_PORT}:80/tcp"
-      - "${HTTPS_PORT}:443/tcp"
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./caddy/routes:/etc/caddy/routes:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    networks: [edge]
-networks:
-  edge:
-    name: "${DEPLOY_NETWORK}"
-volumes:
-  caddy_data: {}
-  caddy_config: {}
-`,
-		"deploy/infrastructure/caddy/Caddyfile": "{\n    email {$CADDY_ACME_EMAIL}\n}\nimport /etc/caddy/routes/*.caddy\n",
 	}
 	for p, s := range paths {
 		full := filepath.Join(root, p)
@@ -117,7 +100,7 @@ volumes:
 		}
 	}
 	t.Setenv("PROJECT_NAME", name)
-    configYAML:=fmt.Sprintf("version: 1\nproject: %s\nroutes:\n  - host: app.localhost\n    service: app\n    port: 80\nopenbao:\n  mount: kv\n  secrets:\n    - service: app\n      name: database_password\n      path: db\n      field: password\n",name)
+    configYAML:=fmt.Sprintf("version: 1\nproject: %s\nopenbao:\n  mount: kv\n  secrets:\n    - service: app\n      name: database_password\n      path: db\n      field: password\n",name)
     // Exercise both lifecycle phases against a real, digest-pinned application
     // container. nginx -v and nginx -t are harmless framework-neutral probes.
     configYAML += "lifecycle:\n  before_start:\n    - service: app\n      entrypoint: nginx\n      args: [-v]\n      timeout_seconds: 30\n  before_switch:\n    - service: app\n      entrypoint: nginx\n      args: [-t]\n      timeout_seconds: 30\n"
@@ -133,7 +116,7 @@ volumes:
 			env := c.environment(release, slot)
 			_ = ExecRunner{}.Run(context.Background(), root, env, "docker", "compose", "-f", filepath.Join(root, "deploy/compose.yml"), "down", "--remove-orphans")
 		}
-		_ = ExecRunner{}.Run(context.Background(), root, c.environment(release, "blue"), "docker", "compose", "-f", filepath.Join(root, "deploy/infrastructure/compose.yml"), "down", "--volumes", "--remove-orphans")
+		_ = ExecRunner{}.Run(context.Background(), root, c.environment(release, "blue"), "docker", "compose", "--env-file", filepath.Join(filepath.Dir(root), "edge", ".env"), "-f", filepath.Join(filepath.Dir(root), "edge", "compose.yml"), "down", "--volumes", "--remove-orphans")
 	})
 	if err := c.Deploy(ctx, release); err != nil {
 		t.Fatalf("deploy v1: %v", err)

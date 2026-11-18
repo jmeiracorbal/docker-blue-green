@@ -79,7 +79,7 @@ func Configure(args []string, input io.Reader, output io.Writer) error {
         }
     }
     // One guided setup path and one fully declarative, noninteractive path.
-    // All project configuration remains in deploy/bluegreen.yml.
+    // Ingress is owned by the application Compose; other settings remain in bluegreen.yml.
     registryProvided:=*regHost!="" || *regRepo!="" || *regUser!=""
     if registryProvided && (*regHost==""||*regRepo==""||*regUser=="") {
         return errors.New("OCI registry requires --registry-host, --registry-repository and --registry-username")
@@ -121,6 +121,8 @@ func Configure(args []string, input io.Reader, output io.Writer) error {
     }
     if err:=cfg.Validate(true);err!=nil{return err}
     if err:=cfg.ValidateApplicationServices(*dir);err!=nil{return err}
+    if err:=cfg.ValidateInfrastructureServices(*dir);err!=nil{return err}
+    if err:=config.SaveIngress(*dir,cfg.Routes);err!=nil{return err}
     if err:=config.Save(*dir,cfg);err!=nil{return err}
     _,err=fmt.Fprintf(output,"Configured %s in %s\n",cfg.Project,config.Path(*dir))
     return err

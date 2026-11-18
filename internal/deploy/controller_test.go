@@ -45,13 +45,18 @@ func (f *fakeRunner) Output(_ context.Context, _ string, _ []string, bin string,
 func testRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
+    t.Setenv("DEPLOY_NETWORK","bluegreen-test-edge")
+    t.Setenv("CADDY_IMAGE","caddy:2.10-alpine")
+    t.Setenv("CADDY_ACME_EMAIL","test@example.invalid")
+    t.Setenv("HTTP_PORT","18080")
+    t.Setenv("HTTPS_PORT","18443")
 	for _, p := range []string{"deploy/compose.yml", "deploy/infrastructure/compose.yml", "deploy/infrastructure/caddy/Caddyfile"} {
 		target := filepath.Join(root, p)
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			t.Fatal(err)
 		}
         content := "services: {}\n"
-        if p == "deploy/compose.yml" { content = "services:\n  api:\n    image: nginx:1.27-alpine\n" }
+        if p == "deploy/compose.yml" { content = "services:\n  api:\n    image: nginx:1.27-alpine\n    networks:\n      edge:\n        aliases: [\"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-api\"]\nnetworks:\n  edge:\n    external: true\n    name: \"${DEPLOY_NETWORK}\"\nx-bluegreen:\n  ingress:\n    - host: api.example.com\n      service: api\n      port: 8000\n" }
         if err := os.WriteFile(target, []byte(content), 0644); err != nil {
             t.Fatal(err)
         }
@@ -93,9 +98,11 @@ func TestDeployAndRollback(t *testing.T) {
 	if err := c.Deploy(ctx, release("v1")); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.calls) != count {
-		t.Fatal("re-deployed same image digest")
-	}
+	for _,call:=range runner.calls[count:] {
+        if strings.Contains(call,filepath.Join(root,"deploy","compose.yml")) {
+            t.Fatal("re-deployed the unchanged application release")
+        }
+    }
 	second := release("v2")
 	second.Images["api"] = "ghcr.io/example/api@sha256:" + strings.Repeat("b", 64)
 	if err := c.Deploy(ctx, second); err != nil {
@@ -211,4 +218,55 @@ func TestDeployRejectsReleaseConfigurationDrift(t *testing.T) {
     wrongRoute.Routes[0].Host="other.example.com"
     if err:=c.Deploy(context.Background(),wrongRoute);err==nil{t.Fatal("accepted route drift")}
     if len(runner.calls)!=0{t.Fatal("Docker was called for mismatched configuration")}
+}
+
+func TestReleaseSharedIngressIsNotAnApplicationImage(t *testing.T){
+ r:=release("v1")
+ r.Routes=append(r.Routes,Route{Host:"storage.example.com",Service:"rustfs",Port:9000,Shared:true})
+ if err:=Validate(r);err!=nil{t.Fatal(err)}
+ r.Routes[1].Shared=false
+ if err:=Validate(r);err==nil{t.Fatal("accepted unversioned route as an app")}
+}
+
+func TestTwoProjectsShareOneEdgeAndPreserveIndependentRoutes(t *testing.T){
+    parent:=t.TempDir()
+    t.Setenv("DEPLOY_NETWORK","shared-test-edge")
+    t.Setenv("CADDY_IMAGE","caddy:2.10-alpine")
+    t.Setenv("CADDY_ACME_EMAIL","ci@example.invalid")
+    t.Setenv("HTTP_PORT","18080")
+    t.Setenv("HTTPS_PORT","18443")
+    create:=func(project,host string)(Controller,Release){
+        root:=filepath.Join(parent,project)
+        if err:=os.MkdirAll(filepath.Join(root,"deploy"),0755);err!=nil{t.Fatal(err)}
+        cfg:=config.Document{Version:1,Project:project}
+        if err:=config.Save(root,cfg);err!=nil{t.Fatal(err)}
+        doc:="services:\n  api:\n    image: ${API_IMAGE}\n    healthcheck:\n      test: [\"CMD\", \"true\"]\n    networks:\n      edge:\n        aliases: [\"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-api\"]\nnetworks:\n  edge:\n    external: true\n    name: ${DEPLOY_NETWORK}\n"
+        path:=filepath.Join(root,"deploy","compose.yml")
+        if err:=os.WriteFile(path,[]byte(doc),0644);err!=nil{t.Fatal(err)}
+        routes:=[]config.Route{{Host:host,Service:"api",Port:8080}}
+        if err:=config.SaveIngress(root,routes);err!=nil{t.Fatal(err)}
+        r:=Release{Project:project,Version:"v1",Images:map[string]string{"api":"ghcr.io/example/api@sha256:"+strings.Repeat("a",64)},Routes:[]Route{{Host:host,Service:"api",Port:8080}}}
+        return Controller{Root:root,Runner:&fakeRunner{}},r
+    }
+    c1,r1:=create("first","first.example.com")
+    c2,r2:=create("second","second.example.com")
+    ctx:=context.Background()
+    if err:=c1.Deploy(ctx,r1);err!=nil{t.Fatal(err)}
+    if err:=c2.Deploy(ctx,r2);err!=nil{t.Fatal(err)}
+    edgeRoot:=filepath.Join(parent,"edge")
+    a,b:=filepath.Join(edgeRoot,"apps","first.caddy"),filepath.Join(edgeRoot,"apps","second.caddy")
+    prior,err:=os.ReadFile(b);if err!=nil{t.Fatal(err)}
+    if _,err:=os.Stat(filepath.Join(edgeRoot,"compose.yml"));err!=nil{t.Fatal(err)}
+    r1.Version="v2"
+    r1.Images["api"]="ghcr.io/example/api@sha256:"+strings.Repeat("b",64)
+    if err:=c1.Deploy(ctx,r1);err!=nil{t.Fatal(err)}
+    contents,err:=os.ReadFile(a);if err!=nil{t.Fatal(err)}
+    if !strings.Contains(string(contents),"first-green-api"){t.Fatal(string(contents))}
+    after,err:=os.ReadFile(b);if err!=nil{t.Fatal(err)}
+    if string(prior)!=string(after){t.Fatal("unrelated project route mutated")}
+    if err:=c1.Rollback(ctx,"first");err!=nil{t.Fatal(err)}
+    restored,err:=os.ReadFile(a);if err!=nil{t.Fatal(err)}
+    if !strings.Contains(string(restored),"first-blue-api"){t.Fatal(string(restored))}
+    after,err=os.ReadFile(b);if err!=nil{t.Fatal(err)}
+    if string(prior)!=string(after){t.Fatal("rollback of first project affected second")}
 }

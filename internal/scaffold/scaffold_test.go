@@ -46,7 +46,7 @@ func TestInitializeExistingCompose(t *testing.T) {
 			t.Errorf("missing in app: %s", expected)
 		}
 	}
-	for _, expected := range []string{"db:", "caddy:", "caddy_data:", "dbdata:", `"${PROJECT_NAME}-infrastructure"`, `"${DEPLOY_NETWORK}"`, `"./caddy/Caddyfile:/etc/caddy/Caddyfile:ro"`} {
+	for _, expected := range []string{"db:", "dbdata:", `"${PROJECT_NAME}-infrastructure"`, `"${DEPLOY_NETWORK}"`, "external: true"} {
 		if !strings.Contains(infra, expected) {
 			t.Errorf("missing in infra: %s", expected)
 		}
@@ -55,7 +55,7 @@ func TestInitializeExistingCompose(t *testing.T) {
 		t.Fatal("app leaked into infrastructure")
 	}
 	env := find(files, ".env.example")
-	for _, required := range []string{"PROJECT_NAME=", "DEPLOYMENT_SLOT=", "API_IMAGE=", "DEPLOY_NETWORK=", "CADDY_IMAGE="} {
+	for _, required := range []string{"PROJECT_NAME=", "DEPLOYMENT_SLOT=", "API_IMAGE=", "DEPLOY_NETWORK=", "CADDY_IMAGE=", "CADDY_ACME_EMAIL=", "HTTP_PORT=", "HTTPS_PORT="} {
 		if !strings.Contains(env, required) {
 			t.Errorf("missing key %s", required)
 		}
@@ -78,16 +78,16 @@ func TestNoSourceGeneratesBasicScaffold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 7 {
+	if len(files) != 4 {
 		t.Fatalf("got %d files", len(files))
 	}
 	if !strings.Contains(find(files, "deploy/compose.yml"), "${APPLICATION_IMAGE}") {
 		t.Fatal("missing default app")
 	}
-	if !strings.Contains(find(files, "deploy/bluegreen.yml"), "routes: []") { t.Fatal("missing route manifest") }
-	if !strings.Contains(find(files, "deploy/infrastructure/compose.yml"), "caddy:") {
-		t.Fatal("missing caddy")
-	}
+	if !strings.Contains(find(files, "deploy/compose.yml"), "ingress: []") { t.Fatal("missing Compose ingress declaration") }
+	if strings.Contains(find(files, "deploy/infrastructure/compose.yml"), "caddy:") {
+        t.Fatal("project scaffold must not create a Caddy service")
+    }
 }
 
 func TestClassificationRequiresAllServices(t *testing.T) {

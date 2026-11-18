@@ -23,8 +23,11 @@ cleanup() {
       (cd "$REMOTE_DIR" && DEPLOYMENT_SLOT="$slot" \
         docker compose --env-file .env -f deploy/compose.yml down --remove-orphans) >/dev/null 2>&1
     done
-    (cd "$REMOTE_DIR" && docker compose --env-file .env \
-      -f deploy/infrastructure/compose.yml down --volumes --remove-orphans) >/dev/null 2>&1
+    if [[ -f "$HOME/.local/share/docker-blue-green/edge/.env" ]]; then
+      (cd "$HOME/.local/share/docker-blue-green/edge" && docker compose --env-file .env \
+        -f compose.yml down --volumes --remove-orphans) >/dev/null 2>&1
+      rm -rf "$HOME/.local/share/docker-blue-green/edge"
+    fi
   fi
   docker rm -f "$REGISTRY_CONTAINER" >/dev/null 2>&1
   if [[ -f "$TMP/sshd.pid" ]]; then

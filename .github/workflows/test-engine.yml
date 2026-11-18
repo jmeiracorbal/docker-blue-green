@@ -47,8 +47,6 @@ jobs:
         run: |
           docker compose --env-file examples/remote-e2e/.env.example \
             -f examples/remote-e2e/deploy/compose.yml config --quiet
-          docker compose --env-file examples/remote-e2e/.env.example \
-            -f examples/remote-e2e/deploy/infrastructure/compose.yml config --quiet
       - name: Build OCI fixture image
         run: docker build -t bluegreen-remote-e2e:verify examples/remote-e2e/app
 

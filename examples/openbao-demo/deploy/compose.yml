@@ -15,3 +15,9 @@ networks:
   edge:
     external: true
     name: "${DEPLOY_NETWORK}"
+
+x-bluegreen:
+  ingress:
+    - host: app.localhost
+      service: app
+      port: 80

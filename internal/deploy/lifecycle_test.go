@@ -25,8 +25,6 @@ func lifecycleFixture(t *testing.T, root string) {
         }},
     }
     if err:=config.Save(root,cfg);err!=nil{t.Fatal(err)}
-    content:="services:\n  api:\n    image: ${API_IMAGE}\n"
-    if err:=os.WriteFile(filepath.Join(root,"deploy","compose.yml"),[]byte(content),0644);err!=nil{t.Fatal(err)}
 }
 
 func callIndex(calls []string, fragment string) int {

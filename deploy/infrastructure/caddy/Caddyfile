@@ -1,5 +1,0 @@
-{
-    email {$CADDY_ACME_EMAIL}
-}
-
-import /etc/caddy/routes/*.caddy
