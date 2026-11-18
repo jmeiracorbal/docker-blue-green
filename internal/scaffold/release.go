@@ -23,10 +23,8 @@ permissions:
 
 jobs:
   validate:
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/validate-consumer.yml@adfe87ec60f72310afbae0820065bdb6ed5f0072
-    with:
-      engine_ref: adfe87ec60f72310afbae0820065bdb6ed5f0072
-      validation_env_file: .github/blue-green.env
+    uses: ./.github/workflows/blue-green.yml
+    secrets: inherit
 
   publish:
     needs: validate
@@ -63,6 +61,7 @@ on:
   push:
     branches: [main, master]
   merge_group:
+  workflow_call:
 
 permissions:
   contents: read
@@ -74,20 +73,71 @@ jobs:
       engine_ref: adfe87ec60f72310afbae0820065bdb6ed5f0072
       validation_env_file: .github/blue-green.env
 
+  repository-secrets:
+    name: repository-secrets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # GitHub resolves these expressions. Only booleans reach the runner.
+    env:
+      HAS_SERVER_SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY != '' }}
+      HAS_OCI_REGISTRY_PULL_USERNAME: ${{ secrets.OCI_REGISTRY_PULL_USERNAME != '' }}
+      HAS_OCI_REGISTRY_PULL_TOKEN: ${{ secrets.OCI_REGISTRY_PULL_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Check required repository secrets
+        env:
+          ENGINE_REF: adfe87ec60f72310afbae0820065bdb6ed5f0072
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen$@ENGINE_REF"
+          "$(go env GOPATH)/bin/bluegreen" secrets plan --dir . > "$RUNNER_TEMP/bluegreen-repository-secrets.json"
+          missing=0
+          while IFS= read -r secret_name; do
+            case "$secret_name" in
+              SERVER_SSH_PRIVATE_KEY)
+                present="$HAS_SERVER_SSH_PRIVATE_KEY"
+                ;;
+              OCI_REGISTRY_PULL_USERNAME)
+                present="$HAS_OCI_REGISTRY_PULL_USERNAME"
+                ;;
+              OCI_REGISTRY_PULL_TOKEN)
+                present="$HAS_OCI_REGISTRY_PULL_TOKEN"
+                ;;
+              *)
+                echo "::error::Unsupported required repository secret: $secret_name"
+                missing=1
+                continue
+                ;;
+            esac
+            if [[ "$present" != "true" ]]; then
+              echo "::error::Missing required repository secret: $secret_name"
+              missing=1
+            fi
+          done < <(jq -r '.github_required[]' "$RUNNER_TEMP/bluegreen-repository-secrets.json")
+          [[ "$missing" -eq 0 ]] || exit 1
+
   blue-green:
     name: blue-green
-    needs: [validate]
+    needs: [validate, repository-secrets]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Require successful Blue-Green validation
         env:
           VALIDATION_RESULT: ${{ needs.validate.result }}
+          REPOSITORY_SECRETS_RESULT: ${{ needs.repository-secrets.result }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$VALIDATION_RESULT" == "success" ]] || {
-            echo "Required Blue-Green validation did not pass: $VALIDATION_RESULT" >&2
+          [[ "$VALIDATION_RESULT" == "success" && "$REPOSITORY_SECRETS_RESULT" == "success" ]] || {
+            echo "Blue-Green prerequisites failed: validation=$VALIDATION_RESULT, repository-secrets=$REPOSITORY_SECRETS_RESULT" >&2
             exit 1
           }
 `)}

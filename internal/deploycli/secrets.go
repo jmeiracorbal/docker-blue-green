@@ -248,8 +248,7 @@ func planSecrets(args []string,out io.Writer)error{
     // The publishing job uses the built-in GitHub token. SSH credentials are
     // only needed when the project enables remote deployment.
     if cfg.Deployment!=nil && cfg.Deployment.Enabled{
-        p.GithubRequired=append(p.GithubRequired,"SERVER_SSH_PRIVATE_KEY")
-        p.GithubOptional=append(p.GithubOptional,"OCI_REGISTRY_PULL_USERNAME","OCI_REGISTRY_PULL_TOKEN")
+        p.GithubRequired=append(p.GithubRequired,"SERVER_SSH_PRIVATE_KEY","OCI_REGISTRY_PULL_USERNAME","OCI_REGISTRY_PULL_TOKEN")
     }
     if cfg.OpenBao!=nil{
         p.OpenBaoMount=cfg.OpenBao.Mount

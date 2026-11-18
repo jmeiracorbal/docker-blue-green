@@ -368,3 +368,11 @@ The deployment secret readiness check is a separate trusted-server operation
 (`bluegreen secrets check`) after OpenBao provisioning. It is not executed on
 untrusted pull request code; secret values must never be copied into a PR,
 CI fixtures, logs, or generated files.
+
+### Validación de secretos configurados en el repositorio GitHub
+
+El workflow generado ejecuta el job `repository-secrets` desde GitHub Actions, no en el host de despliegue. GitHub resuelve expresiones booleanas de existencia para `SERVER_SSH_PRIVATE_KEY`, `OCI_REGISTRY_PULL_USERNAME` y `OCI_REGISTRY_PULL_TOKEN`; los valores secretos nunca se entregan al proceso de validación.
+
+Cuando `deployment.enabled` es `true`, los tres secrets del repositorio son obligatorios. `bluegreen secrets plan` deriva ese requisito del contrato. Si falta alguno, `repository-secrets` falla, bloquea el job final `blue-green` y también impide la publicación de releases, porque el workflow de release invoca ese mismo control como workflow reutilizable local. Los PR de forks no reciben secretos del repositorio y fallan de forma cerrada si estos son necesarios.
+
+`GITHUB_TOKEN` es un token automático de GitHub, no un secret manual. OpenBao permanece separado: las PR validan su declaración y el host confiable verifica los valores reales mediante `bluegreen secrets check`.
