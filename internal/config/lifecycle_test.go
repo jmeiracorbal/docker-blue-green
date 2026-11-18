@@ -49,7 +49,7 @@ func TestLifecycleRejectsInvalidSteps(t *testing.T) {
 func TestLifecycleValidatesComposeServicesAndReleaseImages(t *testing.T) {
     root:=t.TempDir()
     if err:=os.MkdirAll(filepath.Join(root,"deploy"),0755);err!=nil{t.Fatal(err)}
-    compose:="services:\n  api:\n    image: ${API_IMAGE}\n  worker:\n    image: ${WORKER_IMAGE}\n"
+    compose:="services:\n  api:\n    image: ${API_IMAGE}\n    networks:\n      edge:\n        aliases: [\"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-api\"]\n  worker:\n    image: ${WORKER_IMAGE}\nnetworks:\n  edge:\n    external: true\n    name: \"${DEPLOY_NETWORK}\"\n"
     if err:=os.WriteFile(filepath.Join(root,"deploy","compose.yml"),[]byte(compose),0644);err!=nil{t.Fatal(err)}
     cfg:=Document{Version:1,Project:"demo",Routes:[]Route{{Host:"demo.example.com",Service:"api",Port:8080}},
         Lifecycle:&Lifecycle{BeforeSwitch:[]LifecycleStep{{Service:"worker",Entrypoint:"/app/validate",TimeoutSeconds:120}}},

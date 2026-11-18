@@ -87,7 +87,7 @@ func TestSaveDoesNotOverwriteSymlink(t *testing.T) {
 func TestRejectsRoutesOutsideApplicationCompose(t *testing.T) {
     root:=t.TempDir()
     if err:=os.MkdirAll(filepath.Join(root,"deploy"),0755);err!=nil{t.Fatal(err)}
-    if err:=os.WriteFile(filepath.Join(root,"deploy","compose.yml"),[]byte("services:\n  api:\n    image: nginx:latest\n"),0644);err!=nil{
+    if err:=os.WriteFile(filepath.Join(root,"deploy","compose.yml"),[]byte("services:\n  api:\n    image: nginx:latest\n    networks:\n      edge:\n        aliases: [\"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-api\"]\nnetworks:\n  edge:\n    external: true\n    name: \"${DEPLOY_NETWORK}\"\n"),0644);err!=nil{
         t.Fatal(err)
     }
     cfg:=Document{Version:1,Project:"demo",Routes:[]Route{{Host:"web.example.com",Service:"web",Port:80}}}
@@ -135,7 +135,7 @@ func TestSharedIngressRequiresInfrastructureService(t *testing.T){
  root:=t.TempDir()
  if err:=Save(root,Document{Version:1,Project:"demo"});err!=nil{t.Fatal(err)}
  compose:=filepath.Join(root,"deploy","compose.yml")
- if err:=os.WriteFile(compose,[]byte("services:\n  api:\n    image: nginx:alpine\n"),0644);err!=nil{t.Fatal(err)}
+ if err:=os.WriteFile(compose,[]byte("services:\n  api:\n    image: nginx:alpine\n    networks:\n      edge:\n        aliases: [\"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-api\"]\nnetworks:\n  edge:\n    external: true\n    name: \"${DEPLOY_NETWORK}\"\n"),0644);err!=nil{t.Fatal(err)}
  if err:=SaveIngress(root,[]Route{{Host:"api.example.com",Service:"api",Port:80},
      {Host:"storage.example.com",Service:"rustfs",Port:9000,Shared:true}});err!=nil{t.Fatal(err)}
  cfg,err:=Load(root);if err!=nil{t.Fatal(err)}

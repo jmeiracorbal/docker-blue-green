@@ -371,8 +371,11 @@ func (cfg Document) ValidateApplicationServices(root string) error {
                 return fmt.Errorf("shared ingress %q refers to unknown infrastructure service %q",route.Host,route.Service)
             }
             if err:=validateSharedIngressNetwork(b,cfg.Project,route.Service);err!=nil{return err}
-        }else if _,ok:=model.Services[route.Service];!ok{
-            return fmt.Errorf("route %q refers to an unknown application service %q",route.Host,route.Service)
+        }else{
+            if _,ok:=model.Services[route.Service];!ok {
+                return fmt.Errorf("route %q refers to an unknown application service %q",route.Host,route.Service)
+            }
+            if err:=validateApplicationIngressNetwork(data,route.Service);err!=nil{return err}
         }
     }
     if cfg.Lifecycle!=nil {
@@ -442,4 +445,29 @@ func validateSharedIngressNetwork(data []byte,project,service string)error{
         }
     }
     return fmt.Errorf("shared ingress service %q must join external DEPLOY_NETWORK with alias %s",service,expected)
+}
+
+func validateApplicationIngressNetwork(data []byte,service string)error{
+    var model struct {
+        Services map[string]any `yaml:"services"`
+        Networks map[string]any `yaml:"networks"`
+    }
+    if err:=yaml.Unmarshal(data,&model);err!=nil{return err}
+    svc,ok:=model.Services[service].(map[string]any)
+    if !ok {return errors.New("ingress service must be a mapping")}
+    networks,ok:=svc["networks"].(map[string]any)
+    if !ok{return fmt.Errorf("ingress service %q must declare the Edge network",service)}
+    expected:="${PROJECT_NAME}-${DEPLOYMENT_SLOT}-"+service
+    for name,spec:=range networks {
+        top,ok:=model.Networks[name].(map[string]any)
+        if !ok || top["external"]!=true || top["name"]!="${DEPLOY_NETWORK}" {continue}
+        settings,ok:=spec.(map[string]any)
+        if !ok{continue}
+        aliases,ok:=settings["aliases"].([]any)
+        if !ok{continue}
+        for _,alias:=range aliases {
+            if alias==expected{return nil}
+        }
+    }
+    return fmt.Errorf("ingress service %q must join external DEPLOY_NETWORK with slot-aware alias %s",service,expected)
 }

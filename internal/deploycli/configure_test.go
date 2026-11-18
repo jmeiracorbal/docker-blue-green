@@ -14,7 +14,7 @@ import (
 func prepareProject(t *testing.T,root string,service string) {
     t.Helper()
     if err:=os.MkdirAll(filepath.Join(root,"deploy"),0755);err!=nil{t.Fatal(err)}
-    compose:="services:\n  "+service+":\n    image: nginx:1.27-alpine\n"
+    compose:="services:\n  "+service+":\n    image: nginx:1.27-alpine\n    networks:\n      edge:\n        aliases: [\"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-"+service+"\"]\nnetworks:\n  edge:\n    external: true\n    name: \"${DEPLOY_NETWORK}\"\n"
     if err:=os.WriteFile(filepath.Join(root,"deploy","compose.yml"),[]byte(compose),0644);err!=nil{t.Fatal(err)}
 }
 
