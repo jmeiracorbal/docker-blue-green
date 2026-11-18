@@ -9,10 +9,6 @@ import (
 func TestLifecycleContractAcceptsStructuredSteps(t *testing.T) {
     raw:=`version: 1
 project: demo
-routes:
-  - host: demo.example.com
-    service: api
-    port: 8080
 lifecycle:
   before_start:
     - service: api
