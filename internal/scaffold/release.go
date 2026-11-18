@@ -6,8 +6,6 @@ import (
     "strings"
 )
 
-const engineRevision = "e82b74c860c0bf6db5bd116f26a411617f17afdf"
-
 // publishWorkflowFile installs a thin, version-pinned caller for the shared
 // registry publishing workflow. No registry credentials are stored in the repository.
 func publishWorkflowFile() File {
