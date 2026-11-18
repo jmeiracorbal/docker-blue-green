@@ -22,7 +22,14 @@ permissions:
   packages: write
 
 jobs:
+  validate:
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/validate-consumer.yml@e82b74c860c0bf6db5bd116f26a411617f17afdf
+    with:
+      engine_ref: e82b74c860c0bf6db5bd116f26a411617f17afdf
+      validation_env_file: .github/blue-green.env
+
   publish:
+    needs: validate
     uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@e82b74c860c0bf6db5bd116f26a411617f17afdf
     with:
       version: ${{ github.event.release.tag_name }}

@@ -190,11 +190,14 @@ func TestPublishedWorkflowUsesProjectContract(t *testing.T) {
     if strings.Contains(workflow,"@main"){t.Fatal("reusable workflows must use immutable commits")}
     engine:=regexp.MustCompile(`engine_ref: ([0-9a-f]{40})`)
     refs:=engine.FindAllStringSubmatch(workflow,-1)
-    if len(refs)!=2 || refs[0][1]!=refs[1][1]{
-        t.Fatalf("publishing and deployment must use the same immutable engine: %v",refs)
+    if len(refs)!=3 || refs[0][1]!=refs[1][1] || refs[1][1]!=refs[2][1] {
+        t.Fatalf("validation, publishing and deployment must use the same immutable engine: %v",refs)
     }
     pinned:=strings.Count(workflow,"@"+refs[0][1])
-    if pinned!=2{t.Fatalf("reusable workflows must use the same pinned engine; got %d",pinned)}
+    if pinned!=3{t.Fatalf("reusable workflows must use the same pinned engine; got %d",pinned)}
+    if !strings.Contains(workflow,"  publish:\n    needs: validate") {
+        t.Fatal("release publication must require successful Blue-Green validation")
+    }
 }
 
 func TestGeneratedRequiredBlueGreenWorkflowAndCIEnv(t *testing.T) {
