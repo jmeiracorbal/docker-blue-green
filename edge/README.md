@@ -21,3 +21,17 @@ Only the explicitly declared infrastructure service must join the Edge network
 with that alias. Keep databases, queues and private services on internal networks
 unless there is a deliberate, justified ingress declaration. This does not
 publish ports on the host or create per-application Caddy instances.
+
+## Reusable migration validation
+
+A consumer repository invokes
+`.github/workflows/validate-consumer.yml` by an immutable Blue-Green commit
+SHA. The reusable workflow installs the same immutable CLI, verifies the
+generated deployment files, checks the single Compose ingress contract,
+rejects obsolete route/secret manifests or a project-owned Caddy, validates
+Compose with the caller's **non-secret** CI environment file, and exports
+the public release contract. It never deploys infrastructure, reads live
+OpenBao secret values, or connects to a production host.
+
+The consumer must pass `engine_ref` equal to the pinned workflow revision
+and `validation_env_file` as a repository-relative file path.

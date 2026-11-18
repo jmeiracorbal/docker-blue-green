@@ -1,0 +1,72 @@
+name: Validate Blue-Green consumer migration
+
+on:
+  workflow_call:
+    inputs:
+      engine_ref:
+        description: Immutable 40-character Git commit of the Blue-Green contract engine
+        required: true
+        type: string
+      validation_env_file:
+        description: Repository-relative path to non-secret CI Compose environment
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Install immutable Blue-Green contract engine
+        env:
+          ENGINE_REF: ${{ inputs.engine_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$ENGINE_REF" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "engine_ref must identify an immutable Git commit" >&2
+            exit 1
+          }
+          go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen@$ENGINE_REF"
+
+      - name: Validate generated project contract and deployment files
+        env:
+          VALIDATION_ENV_FILE: ${{ inputs.validation_env_file }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$VALIDATION_ENV_FILE" && "$VALIDATION_ENV_FILE" != /* ]] || {
+            echo "validation_env_file must be repository-relative" >&2
+            exit 1
+          }
+          env_file="$(realpath -m "$GITHUB_WORKSPACE/$VALIDATION_ENV_FILE")"
+          [[ "$env_file" == "$GITHUB_WORKSPACE/"* && -f "$env_file" ]] || {
+            echo "validation_env_file must exist inside the repository" >&2
+            exit 1
+          }
+          test -f deploy/bluegreen.yml
+          test -f deploy/compose.yml
+          test -f .github/workflows/release.yml
+          test ! -e deploy/routes.json
+          test ! -e deploy/secrets.json
+          "$(go env GOPATH)/bin/bluegreen" config check --dir .
+          "$(go env GOPATH)/bin/bluegreen" config export --dir . > "$RUNNER_TEMP/bluegreen-contract.json"
+          jq -e '
+            (.project | type=="string" and length>0) and
+            (.routes | type=="array" and length>0) and
+            (.routes | all(.[]; .host!="" and .service!="" and .port>0))
+          ' "$RUNNER_TEMP/bluegreen-contract.json" >/dev/null
+          docker compose --env-file "$env_file" -f deploy/compose.yml config --quiet
+          if [[ -f deploy/infrastructure/compose.yml ]]; then
+            docker compose --env-file "$env_file" -f deploy/infrastructure/compose.yml config --quiet
+          fi
