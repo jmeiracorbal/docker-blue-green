@@ -21,6 +21,8 @@ func TestSecretCheckUsesManagedProxyEndpoint(t *testing.T) {
         }}},
     }
     if err:=config.Save(root,cfg);err!=nil{t.Fatal(err)}
+    prepareProject(t,root,"api")
+    if err:=config.SaveIngress(root,cfg.Routes);err!=nil{t.Fatal(err)}
     var output bytes.Buffer
     err:=checkSecrets([]string{"check","--dir",root},&output)
     if err==nil || !strings.Contains(err.Error(),"access OpenBao Proxy socket"){
@@ -42,6 +44,7 @@ func TestSecretAddCreatesAndExtendsManifest(t *testing.T) {
     if err:=config.Save(root,config.Document{Version:1,Project:"myapp",
         Routes:[]config.Route{{Host:"api.example.com",Service:"api",Port:80}},
     });err!=nil{t.Fatal(err)}
+    if err:=config.SaveIngress(root,[]config.Route{{Host:"api.example.com",Service:"api",Port:80}});err!=nil{t.Fatal(err)}
     args:=[]string{"add","--dir",root,"--project","myapp","--mount","kv","--service","api",
         "--name","database_password","--path","database","--field","password"}
     var out bytes.Buffer
@@ -77,6 +80,7 @@ func TestGuidedOpenBaoSetup(t *testing.T) {
 
 func TestDiscoveryRequiresAuthorizedKVScope(t *testing.T) {
     root:=t.TempDir()
+    prepareProject(t,root,"api")
     if err:=config.Save(root,config.Document{Version:1,Project:"myapp"});err!=nil{t.Fatal(err)}
     var out bytes.Buffer
     err:=checkSecrets([]string{"list","--dir",root},&out)
