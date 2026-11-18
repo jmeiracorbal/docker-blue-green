@@ -14,6 +14,7 @@ import (
     "sort"
     "strconv"
     "strings"
+    "sync"
     "syscall"
 )
 
@@ -47,13 +48,27 @@ type Manager struct {
 func Root(projectRoot string) string {
     return filepath.Join(filepath.Dir(projectRoot), "edge")
 }
+var edgeProcessLocks sync.Map
+
 func (m Manager) lock() (func(),error) {
-    if err:=os.MkdirAll(m.Root,0700);err!=nil{return nil,err}
-    if err:=os.Chmod(m.Root,0700);err!=nil{return nil,err}
-    f,err:=os.OpenFile(filepath.Join(m.Root,"lock"),os.O_CREATE|os.O_RDWR,0600)
+    root,err:=filepath.Abs(m.Root)
+    if err!=nil{return nil,err}
+    instance,_:=edgeProcessLocks.LoadOrStore(root,&sync.Mutex{})
+    mutex:=instance.(*sync.Mutex)
+    mutex.Lock()
+    active:=false
+    defer func(){if !active{mutex.Unlock()}}()
+    if err:=os.MkdirAll(root,0700);err!=nil{return nil,err}
+    if err:=os.Chmod(root,0700);err!=nil{return nil,err}
+    f,err:=os.OpenFile(filepath.Join(root,"lock"),os.O_CREATE|os.O_RDWR,0600)
     if err!=nil{return nil,err}
     if err=syscall.Flock(int(f.Fd()),syscall.LOCK_EX);err!=nil{f.Close();return nil,err}
-    return func(){_ =syscall.Flock(int(f.Fd()),syscall.LOCK_UN);_ =f.Close()},nil
+    active=true
+    return func(){
+        _=syscall.Flock(int(f.Fd()),syscall.LOCK_UN)
+        _=f.Close()
+        mutex.Unlock()
+    },nil
 }
 func (m Manager) env() (map[string]string,error) {
     wanted:=[]string{"DEPLOY_NETWORK","CADDY_IMAGE","CADDY_ACME_EMAIL","HTTP_PORT","HTTPS_PORT"}
