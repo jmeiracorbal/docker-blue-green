@@ -96,7 +96,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen$@ENGINE_REF"
+          go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen@$ENGINE_REF"
           "$(go env GOPATH)/bin/bluegreen" secrets plan --dir . > "$RUNNER_TEMP/bluegreen-repository-secrets.json"
           missing=0
           while IFS= read -r secret_name; do
