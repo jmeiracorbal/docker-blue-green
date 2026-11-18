@@ -3,6 +3,7 @@ package deploycli
 import (
     "bufio"
     "context"
+    "encoding/json"
     "errors"
     "flag"
     "fmt"
@@ -16,8 +17,10 @@ import (
 )
 
 func checkSecrets(args []string, out io.Writer) error {
-    if len(args)==0 { return errors.New("usage: bluegreen secrets check|add|list|fields|setup|reconcile") }
+    if len(args)==0 { return errors.New("usage: bluegreen secrets plan|check|add|list|fields|setup|reconcile") }
     switch args[0] {
+    case "plan":
+        return planSecrets(args[1:],out)
     case "check":
         flags:=flag.NewFlagSet("secrets check",flag.ContinueOnError)
         flags.SetOutput(io.Discard)
@@ -208,4 +211,55 @@ func chooseKVName(input *bufio.Reader,output io.Writer,label string,choices []st
     index,err:=strconv.Atoi(strings.TrimSpace(selected))
     if err!=nil||index<1||index>len(choices){return "",fmt.Errorf("invalid %s selection",label)}
     return choices[index-1],nil
+}
+
+ 
+// planSecrets renders requirements without contacting OpenBao or reading secret
+// values. This is the safe PR check; live readiness belongs to deployment.
+func planSecrets(args []string,out io.Writer)error{
+    flags:=flag.NewFlagSet("secrets plan",flag.ContinueOnError)
+    flags.SetOutput(io.Discard)
+    dir:=flags.String("dir",".","project directory")
+    if err:=flags.Parse(args);err!=nil{return err}
+    if flags.NArg()!=0{return errors.New("usage: bluegreen secrets plan [--dir PATH]")}
+    cfg,err:=config.Load(*dir);if err!=nil{return err}
+    if err:=cfg.Validate(true);err!=nil{return err}
+    if err:=cfg.ValidateApplicationServices(*dir);err!=nil{return err}
+    if err:=cfg.ValidateInfrastructureServices(*dir);err!=nil{return err}
+    type kvReference struct{
+        Service string `json:"service"`
+        Name string `json:"name"`
+        Path string `json:"path"`
+        Field string `json:"field"`
+    }
+    type plan struct{
+        Project string `json:"project"`
+        GithubRequired []string `json:"github_required"`
+        GithubOptional []string `json:"github_optional"`
+        OpenBaoMount string `json:"openbao_mount,omitempty"`
+        OpenBaoReferences []kvReference `json:"openbao_references"`
+    }
+    p:=plan{
+        Project:cfg.Project,
+        GithubRequired:[]string{},
+        GithubOptional:[]string{},
+        OpenBaoReferences:[]kvReference{},
+    }
+    // The publishing job uses the built-in GitHub token. SSH credentials are
+    // only needed when the project enables remote deployment.
+    if cfg.Deployment!=nil && cfg.Deployment.Enabled{
+        p.GithubRequired=append(p.GithubRequired,"SERVER_SSH_PRIVATE_KEY")
+        p.GithubOptional=append(p.GithubOptional,"OCI_REGISTRY_PULL_USERNAME","OCI_REGISTRY_PULL_TOKEN")
+    }
+    if cfg.OpenBao!=nil{
+        p.OpenBaoMount=cfg.OpenBao.Mount
+        for _,ref:=range cfg.OpenBao.Secrets {
+            p.OpenBaoReferences=append(p.OpenBaoReferences,kvReference{
+                Service:ref.Service,Name:ref.Name,Path:ref.Path,Field:ref.Field,
+            })
+        }
+    }
+    encoder:=json.NewEncoder(out)
+    encoder.SetIndent("","  ")
+    return encoder.Encode(p)
 }

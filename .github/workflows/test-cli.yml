@@ -30,5 +30,11 @@ jobs:
           ./bluegreen config check --dir "$RUNNER_TEMP/bluegreen-smoke"
           ./bluegreen config export --dir "$RUNNER_TEMP/bluegreen-smoke" | jq -e '.project == "smoke" and .routes[0].service == "app"'
           test -s "$RUNNER_TEMP/bluegreen-smoke/.github/workflows/release.yml"
-          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 "$RUNNER_TEMP/bluegreen-smoke/.github/workflows/release.yml"
+          test -s "$RUNNER_TEMP/bluegreen-smoke/.github/workflows/blue-green.yml"
+          test -s "$RUNNER_TEMP/bluegreen-smoke/.github/blue-green.env"
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 "$RUNNER_TEMP/bluegreen-smoke/.github/workflows/release.yml" "$RUNNER_TEMP/bluegreen-smoke/.github/workflows/blue-green.yml"
           docker compose -f "$RUNNER_TEMP/bluegreen-smoke/deploy/compose.yml" config --no-interpolate --quiet
+      - name: Validate generated CI Compose contract
+        run: |
+          docker compose --env-file "$RUNNER_TEMP/bluegreen-smoke/.github/blue-green.env" -f "$RUNNER_TEMP/bluegreen-smoke/deploy/compose.yml" config --quiet
+          ./bluegreen secrets plan --dir "$RUNNER_TEMP/bluegreen-smoke" | jq -e '.project == "smoke" and (.openbao_references | type == "array")'

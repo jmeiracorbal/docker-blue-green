@@ -39,7 +39,7 @@ jobs:
           }
           go install "github.com/jmeiracorbal/docker-blue-green/cmd/bluegreen@$ENGINE_REF"
 
-      - name: Validate generated project contract and deployment files
+      - name: Validate required deployment structure
         env:
           VALIDATION_ENV_FILE: ${{ inputs.validation_env_file }}
         shell: bash
@@ -60,6 +60,27 @@ jobs:
           test ! -e deploy/routes.json
           test ! -e deploy/secrets.json
           "$(go env GOPATH)/bin/bluegreen" config check --dir .
+
+      - name: Validate declared secrets and provisioning plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$(go env GOPATH)/bin/bluegreen" secrets plan --dir . > "$RUNNER_TEMP/bluegreen-secrets-plan.json"
+          jq -e '
+            (.project | type=="string" and length>0) and
+            (.github_required | type=="array") and
+            (.github_optional | type=="array") and
+            (.openbao_references | type=="array") and
+            (.openbao_references | all(.[]; .service!="" and .name!="" and .path!="" and .field!=""))
+          ' "$RUNNER_TEMP/bluegreen-secrets-plan.json" >/dev/null
+
+      - name: Validate ingress and exported release contract
+        env:
+          VALIDATION_ENV_FILE: ${{ inputs.validation_env_file }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          env_file="$(realpath -m "$GITHUB_WORKSPACE/$VALIDATION_ENV_FILE")"
           "$(go env GOPATH)/bin/bluegreen" config export --dir . > "$RUNNER_TEMP/bluegreen-contract.json"
           jq -e '
             (.project | type=="string" and length>0) and

@@ -78,7 +78,7 @@ func TestNoSourceGeneratesBasicScaffold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 4 {
+	if len(files) != 6 {
 		t.Fatalf("got %d files", len(files))
 	}
 	if !strings.Contains(find(files, "deploy/compose.yml"), "${APPLICATION_IMAGE}") {
@@ -195,4 +195,36 @@ func TestPublishedWorkflowUsesProjectContract(t *testing.T) {
     }
     pinned:=strings.Count(workflow,"@"+refs[0][1])
     if pinned!=2{t.Fatalf("reusable workflows must use the same pinned engine; got %d",pinned)}
+}
+
+func TestGeneratedRequiredBlueGreenWorkflowAndCIEnv(t *testing.T) {
+    files,err:=Generate(Options{})
+    if err!=nil{t.Fatal(err)}
+    workflow:=find(files,".github/workflows/blue-green.yml")
+    for _,expected:=range []string{
+        "name: blue-green",
+        "  pull_request:",
+        "  push:",
+        "  merge_group:",
+        "    needs: [validate]",
+        "    if: ${{ always() }}",
+        "    name: blue-green",
+        "bluegreen-validation",
+        "validate-consumer.yml@",
+        "engine_ref:",
+    } {
+        if expected=="bluegreen-validation" {continue}
+        if !strings.Contains(workflow,expected){t.Errorf("generated workflow lacks %q",expected)}
+    }
+    if strings.Contains(workflow,"@main"){t.Fatal("workflow must pin a revision")}
+    env:=find(files,".github/blue-green.env")
+    for _,expected:=range []string{"PROJECT_NAME=bluegreen-ci","DEPLOY_NETWORK=bluegreen-ci-edge","APPLICATION_IMAGE=ghcr.io/example/bluegreen-ci:validation","APPLICATION_PORT=8080"}{
+        if !strings.Contains(env,expected){t.Errorf("missing CI-only config %s",expected)}
+    }
+    if strings.Contains(env,"SECRET_KEY="){t.Fatal("CI environment must not include credential values")}
+    root:=t.TempDir()
+    if err:=Write(root,files);err!=nil{t.Fatal(err)}
+    if err:=Write(root,files);err!=nil{t.Fatal(err)}
+    if err:=os.WriteFile(filepath.Join(root,".github","workflows","blue-green.yml"),[]byte("changed"),0644);err!=nil{t.Fatal(err)}
+    if err:=Write(root,files);err==nil{t.Fatal("generated workflow unexpectedly overwritten")}
 }
