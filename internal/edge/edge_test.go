@@ -3,6 +3,8 @@ package edge
 import (
  "context"
  "errors"
+ "fmt"
+ "sync"
  "os"
  "path/filepath"
  "strings"
@@ -77,4 +79,31 @@ func TestPersistentInfrastructureIngressDoesNotChangeSlots(t *testing.T) {
     second,err:=os.ReadFile(m.RouteFile("demo"))
     if err!=nil{t.Fatal(err)}
     if string(first)!=string(second){t.Fatal("persistent route changed between slots")}
+}
+
+func TestConcurrentProjectPublicationIsSerialized(t *testing.T){
+    m:=testManager(t)
+    if err:=m.Ensure(context.Background());err!=nil{t.Fatal(err)}
+    const projects=8
+    errorsByProject:=make([]error,projects)
+    var wg sync.WaitGroup
+    for i:=0;i<projects;i++ {
+        wg.Add(1)
+        go func(i int){
+            defer wg.Done()
+            project:=fmt.Sprintf("project%d",i)
+            hostname:=fmt.Sprintf("host%d.example.com",i)
+            errorsByProject[i]=m.Publish(context.Background(),project,"blue",
+                []Route{{Host:hostname,Service:"api",Port:8080}})
+        }(i)
+    }
+    wg.Wait()
+    for i,err:=range errorsByProject{
+        if err!=nil{t.Fatalf("project %d publication: %v",i,err)}
+        contents,readErr:=os.ReadFile(m.RouteFile(fmt.Sprintf("project%d",i)))
+        if readErr!=nil{t.Fatal(readErr)}
+        if !strings.Contains(string(contents),fmt.Sprintf("host%d.example.com",i)){
+            t.Fatalf("project %d route lost",i)
+        }
+    }
 }
