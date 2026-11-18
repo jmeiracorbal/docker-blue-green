@@ -369,10 +369,10 @@ The deployment secret readiness check is a separate trusted-server operation
 untrusted pull request code; secret values must never be copied into a PR,
 CI fixtures, logs, or generated files.
 
-### Validación de secretos configurados en el repositorio GitHub
+### Checking configured GitHub repository secrets
 
-El workflow generado ejecuta el job `repository-secrets` desde GitHub Actions, no en el host de despliegue. GitHub resuelve expresiones booleanas de existencia para `SERVER_SSH_PRIVATE_KEY`, `OCI_REGISTRY_PULL_USERNAME` y `OCI_REGISTRY_PULL_TOKEN`; los valores secretos nunca se entregan al proceso de validación.
+The generated `repository-secrets` job runs in GitHub Actions, not on the Docker deployment host. GitHub evaluates only the presence of `SERVER_SSH_PRIVATE_KEY`, `OCI_REGISTRY_PULL_USERNAME`, and `OCI_REGISTRY_PULL_TOKEN` and passes three Boolean results to the runner. **Secret values never enter the validation process.**
 
-Cuando `deployment.enabled` es `true`, los tres secrets del repositorio son obligatorios. `bluegreen secrets plan` deriva ese requisito del contrato. Si falta alguno, `repository-secrets` falla, bloquea el job final `blue-green` y también impide la publicación de releases, porque el workflow de release invoca ese mismo control como workflow reutilizable local. Los PR de forks no reciben secretos del repositorio y fallan de forma cerrada si estos son necesarios.
+When the project contract enables remote deployment, all three repository secrets are required. `bluegreen secrets plan` determines the requirement from the same declarative contract; disabled remote deployments do not require these credentials. A missing required secret fails `repository-secrets`, which in turn fails the final `blue-green` check. The generated release workflow calls the same local reusable workflow before publishing, so releases are blocked by missing credentials as well. Forked PRs cannot access repository secrets; when remote deployment requires them, these checks intentionally fail closed.
 
-`GITHUB_TOKEN` es un token automático de GitHub, no un secret manual. OpenBao permanece separado: las PR validan su declaración y el host confiable verifica los valores reales mediante `bluegreen secrets check`.
+`GITHUB_TOKEN` is provisioned automatically by GitHub, not manually configured as a repository secret. OpenBao is independent: pull requests validate OpenBao references while the trusted deployment host verifies actual secret availability with `bluegreen secrets check`. Branch protection or a ruleset must still mark the `blue-green` status check as required; GitHub Actions cannot set branch rules.
