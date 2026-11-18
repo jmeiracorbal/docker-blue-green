@@ -119,8 +119,14 @@ func Generate(o Options) ([]File, error) {
 	app["name"] = "${PROJECT_NAME}-${DEPLOYMENT_SLOT}"
 	infra["name"] = "${PROJECT_NAME}-infrastructure"
 	if err := adjustServices(appServices, infraServices, o.SourcePath, classification); err != nil {
-		return nil, err
-	}
+        return nil, err
+    }
+    // Application Compose is the sole ingress contract; project infrastructure
+    // cannot publish public Edge routes.
+    delete(infra,"x-bluegreen")
+    if _,exists:=app["x-bluegreen"];!exists {
+        app["x-bluegreen"]=map[string]any{"ingress":[]any{}}
+    }
 	if err := prepareNetworks(app, infra, appServices, infraServices); err != nil {
 		return nil, err
 	}
@@ -166,7 +172,7 @@ func Generate(o Options) ([]File, error) {
 func emptyScaffold() []File {
     return []File{
         {Path:"deploy/bluegreen.yml",Data:config.Initial()},
-        {Path:"deploy/compose.yml",Data:[]byte("name: \"${PROJECT_NAME}-${DEPLOYMENT_SLOT}\"\nservices:\n  app:\n    image: \"${APPLICATION_IMAGE}\"\n    expose:\n      - \"${APPLICATION_PORT}\"\n    networks:\n      bluegreen:\n        aliases:\n          - \"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-app\"\nnetworks:\n  bluegreen:\n    external: true\n    name: \"${DEPLOY_NETWORK}\"\n")},
+        {Path:"deploy/compose.yml",Data:[]byte("name: \"${PROJECT_NAME}-${DEPLOYMENT_SLOT}\"\nservices:\n  app:\n    image: \"${APPLICATION_IMAGE}\"\n    expose:\n      - \"${APPLICATION_PORT}\"\n    networks:\n      bluegreen:\n        aliases:\n          - \"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-app\"\nnetworks:\n  bluegreen:\n    external: true\n    name: \"${DEPLOY_NETWORK}\"\nx-bluegreen:\n  ingress: []\n")},
         {Path:".env.example",Data:[]byte("APPLICATION_IMAGE=\nAPPLICATION_PORT=\nCADDY_ACME_EMAIL=\nCADDY_IMAGE=\nDEPLOYMENT_SLOT=\nDEPLOY_NETWORK=\nHTTPS_PORT=\nHTTP_PORT=\nPROJECT_NAME=\n")},
     }
 }

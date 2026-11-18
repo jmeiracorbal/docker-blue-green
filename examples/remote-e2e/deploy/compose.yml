@@ -24,3 +24,9 @@ networks:
   edge:
     external: true
     name: "${DEPLOY_NETWORK}"
+
+x-bluegreen:
+  ingress:
+    - host: e2e.localhost
+      service: app
+      port: 8080

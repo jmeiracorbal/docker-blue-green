@@ -4,8 +4,10 @@ import (
     "bytes"
     "context"
     "encoding/json"
+    _ "embed"
     "errors"
     "fmt"
+    "net"
     "os"
     "path/filepath"
     "regexp"
@@ -15,38 +17,11 @@ import (
     "syscall"
 )
 
-const (
-    compose = `name: bluegreen-edge
-services:
-  caddy:
-    image: "${CADDY_IMAGE:?}"
-    environment:
-      CADDY_ACME_EMAIL: "${CADDY_ACME_EMAIL:?}"
-    ports:
-      - "${HTTP_PORT:?}:80/tcp"
-      - "${HTTPS_PORT:?}:443/tcp"
-      - "${HTTPS_PORT:?}:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./apps:/etc/caddy/apps:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    restart: unless-stopped
-    networks: [edge]
-networks:
-  edge:
-    name: "${DEPLOY_NETWORK:?}"
-volumes:
-  caddy_data: {}
-  caddy_config: {}
-`
-    caddyfile = `{
-  email {$CADDY_ACME_EMAIL}
-}
+//go:embed templates/compose.yml
+var compose string
 
-import /etc/caddy/apps/*.caddy
-`
-)
+//go:embed templates/Caddyfile
+var caddyfile string
 
 var projectName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 var hostName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`)
@@ -113,7 +88,13 @@ func (m Manager) env() (map[string]string,error) {
         return nil,errors.New("invalid Edge network, image or ACME email")
     }
     for _,key:=range []string{"HTTP_PORT","HTTPS_PORT"} {
-        port,err:=strconv.Atoi(values[key])
+        raw:=values[key]
+        if strings.Contains(raw,":"){
+            host,number,err:=net.SplitHostPort(raw)
+            if err!=nil || net.ParseIP(host)==nil{return nil,fmt.Errorf("invalid Edge %s bind address",key)}
+            raw=number
+        }
+        port,err:=strconv.Atoi(raw)
         if err!=nil || port<1 || port>65535 {return nil,fmt.Errorf("invalid Edge %s",key)}
     }
     if values["HTTP_PORT"]==values["HTTPS_PORT"] {return nil,errors.New("Edge HTTP and HTTPS host ports must differ")}

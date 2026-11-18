@@ -56,7 +56,7 @@ func testRoot(t *testing.T) string {
 			t.Fatal(err)
 		}
         content := "services: {}\n"
-        if p == "deploy/compose.yml" { content = "services:\n  api:\n    image: nginx:1.27-alpine\n" }
+        if p == "deploy/compose.yml" { content = "services:\n  api:\n    image: nginx:1.27-alpine\nx-bluegreen:\n  ingress:\n    - host: api.example.com\n      service: api\n      port: 8000\n" }
         if err := os.WriteFile(target, []byte(content), 0644); err != nil {
             t.Fatal(err)
         }

@@ -24,7 +24,7 @@ import (
 type Document struct {
     Version int `yaml:"version"`
     Project string `yaml:"project"`
-    Routes []Route `yaml:"routes"`
+    Routes []Route `yaml:"-"`
     Registry *Registry `yaml:"registry,omitempty"`
     Deployment *Deployment `yaml:"deployment,omitempty"`
     OpenBao *OpenBao `yaml:"openbao,omitempty"`
@@ -90,7 +90,7 @@ func Path(root string) string {
 }
 
 func Initial() []byte {
-    return []byte("version: 1\nproject: \"\"\nroutes: []\n")
+    return []byte("version: 1\nproject: \"\"\n")
 }
 
 func Parse(data []byte) (Document, error) {
@@ -125,7 +125,87 @@ func Load(root string) (Document, error) {
     if err != nil {
         return Document{}, fmt.Errorf("read deploy/bluegreen.yml: %w", err)
     }
-    return Parse(data)
+    cfg,err:=Parse(data)
+    if err!=nil{return Document{},err}
+    routes,err:=LoadIngress(root)
+    if err!=nil{return Document{},err}
+    cfg.Routes=routes
+    if err:=cfg.Validate(false);err!=nil{return Document{},err}
+    return cfg,nil
+}
+
+
+type composeIngress struct {
+    XBluegreen *struct{
+        Ingress []Route `yaml:"ingress"`
+    } `yaml:"x-bluegreen"`
+}
+
+// LoadIngress reads the one authoritative public route declaration from
+// deploy/compose.yml. Route values are never duplicated in bluegreen.yml.
+func LoadIngress(root string)([]Route,error){
+    source:=filepath.Join(root,"deploy","compose.yml")
+    b,err:=os.ReadFile(source)
+    if err!=nil{return nil,fmt.Errorf("read application Compose ingress: %w",err)}
+    var model composeIngress
+    if err=yaml.Unmarshal(b,&model);err!=nil{return nil,fmt.Errorf("read x-bluegreen.ingress: %w",err)}
+    if model.XBluegreen==nil{return nil,nil}
+    return model.XBluegreen.Ingress,nil
+}
+
+// SaveIngress updates only the project-level Compose ingress extension.
+// It preserves other mapping nodes, including services and networks.
+func SaveIngress(root string,routes []Route) error {
+    path:=filepath.Join(root,"deploy","compose.yml")
+    b,err:=os.ReadFile(path)
+    if err!=nil{return err}
+    var document yaml.Node
+    if err=yaml.Unmarshal(b,&document);err!=nil{return err}
+    if len(document.Content)!=1 || document.Content[0].Kind!=yaml.MappingNode {
+        return errors.New("Compose must be a YAML mapping")
+    }
+    mapping:=document.Content[0]
+    var ext *yaml.Node
+    for i:=0;i+1<len(mapping.Content);i+=2 {
+        if mapping.Content[i].Value=="x-bluegreen"{ext=mapping.Content[i+1];break}
+    }
+    if ext==nil{
+        ext=&yaml.Node{Kind:yaml.MappingNode,Tag:"!!map"}
+        mapping.Content=append(mapping.Content,&yaml.Node{Kind:yaml.ScalarNode,Tag:"!!str",Value:"x-bluegreen"},ext)
+    }
+    if ext.Kind!=yaml.MappingNode{return errors.New("x-bluegreen must be a mapping")}
+    if routes==nil {routes=[]Route{}}
+    routeBytes,err:=yaml.Marshal(routes)
+    if err!=nil{return err}
+    var seq yaml.Node
+    if err=yaml.Unmarshal(routeBytes,&seq);err!=nil{return err}
+    if len(seq.Content)!=1 || seq.Content[0].Kind!=yaml.SequenceNode {
+        return errors.New("invalid Compose ingress sequence")
+    }
+    found:=false
+    for i:=0;i+1<len(ext.Content);i+=2 {
+        if ext.Content[i].Value=="ingress" {ext.Content[i+1]=seq.Content[0];found=true;break}
+    }
+    if !found{
+        ext.Content=append(ext.Content,&yaml.Node{Kind:yaml.ScalarNode,Tag:"!!str",Value:"ingress"},seq.Content[0])
+    }
+    updated,err:=yaml.Marshal(&document)
+    if err!=nil{return err}
+    return atomicYAML(path,updated)
+}
+func atomicYAML(path string,content []byte)error{
+    info,err:=os.Lstat(path)
+    if err==nil && !info.Mode().IsRegular(){return errors.New("refusing to replace nonregular YAML file")}
+    if err!=nil && !errors.Is(err,os.ErrNotExist){return err}
+    if err=os.MkdirAll(filepath.Dir(path),0750);err!=nil{return err}
+    f,err:=os.CreateTemp(filepath.Dir(path),".bluegreen-yaml-")
+    if err!=nil{return err}
+    defer os.Remove(f.Name())
+    if err=f.Chmod(0644);err!=nil{f.Close();return err}
+    if _,err=f.Write(content);err!=nil{f.Close();return err}
+    if err=f.Sync();err!=nil{f.Close();return err}
+    if err=f.Close();err!=nil{return err}
+    return os.Rename(f.Name(),path)
 }
 
 // Validate allows unfinished init scaffolds only when complete=false.
@@ -241,21 +321,7 @@ func Save(root string, cfg Document) error {
     if err := cfg.Validate(false); err != nil { return err }
     content, err := yaml.Marshal(cfg)
     if err != nil { return err }
-    dest := Path(root)
-    info, err := os.Lstat(dest)
-    if err == nil && !info.Mode().IsRegular() {
-        return errors.New("refusing to replace nonregular bluegreen configuration")
-    }
-    if err != nil && !errors.Is(err, os.ErrNotExist) { return err }
-    if err := os.MkdirAll(filepath.Dir(dest), 0750); err != nil { return err }
-    f, err := os.CreateTemp(filepath.Dir(dest), ".bluegreen-config-")
-    if err != nil { return err }
-    defer os.Remove(f.Name())
-    if err := f.Chmod(0644); err != nil { f.Close(); return err }
-    if _, err := f.Write(content); err != nil { f.Close(); return err }
-    if err := f.Sync(); err != nil { f.Close(); return err }
-    if err := f.Close(); err != nil { return err }
-    return os.Rename(f.Name(), dest)
+    return atomicYAML(Path(root),content)
 }
 
 // Export is the validated public workflow contract. No OpenBao references
@@ -325,18 +391,5 @@ func (cfg Document) ValidateLifecycleServices(images map[string]string) error {
             return fmt.Errorf("lifecycle service %q has no immutable release image",step.Service)
         }
     }
-    return nil
-}
-
-// ValidateInfrastructureServices rejects a second project-owned Caddy container.
-// Shared Caddy is provided exclusively by the host-wide Edge installation.
-func (cfg Document) ValidateInfrastructureServices(root string) error {
-    path:=filepath.Join(root,"deploy","infrastructure","compose.yml")
-    data,err:=os.ReadFile(path)
-    if errors.Is(err,os.ErrNotExist){return nil}
-    if err!=nil{return err}
-    var model struct { Services map[string]any `yaml:"services"` }
-    if err:=yaml.Unmarshal(data,&model);err!=nil{return fmt.Errorf("parse infrastructure Compose: %w",err)}
-    if _,found:=model.Services["caddy"];found{return errors.New("per-project Caddy is forbidden; use shared Edge")}
     return nil
 }

@@ -45,7 +45,7 @@ func TestLifecycleRejectsInvalidSteps(t *testing.T) {
         base.Lifecycle=&Lifecycle{BeforeStart:[]LifecycleStep{step}}
         if err:=base.Validate(true);err==nil{t.Errorf("accepted invalid step: %+v",step)}
     }
-    if _,err:=Parse([]byte("version: 1\nproject: demo\nroutes: []\nlifecycle:\n  before_start:\n    - service: api\n      entrypoint: python\n      timeout_seconds: 60\n      shell: true\n"));err==nil{
+    if _,err:=Parse([]byte("version: 1\nproject: demo\nlifecycle:\n  before_start:\n    - service: api\n      entrypoint: python\n      timeout_seconds: 60\n      shell: true\n"));err==nil{
         t.Fatal("accepted unknown lifecycle field")
     }
 }
