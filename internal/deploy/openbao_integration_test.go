@@ -218,8 +218,9 @@ listener "unix" {
             _=ExecRunner{}.Run(context.Background(),projectRoot,env,"docker","compose","--env-file",envFile,
                 "-f",filepath.Join(projectRoot,"deploy","compose.yml"),"down","--remove-orphans")
         }
+        edgeRoot:=filepath.Join(filepath.Dir(projectRoot),"edge")
         _=ExecRunner{}.Run(context.Background(),projectRoot,cleanupController.environment(release,"blue"),"docker",
-            "compose","--env-file",envFile,"-f",filepath.Join(projectRoot,"deploy","infrastructure","compose.yml"),
+            "compose","--env-file",filepath.Join(edgeRoot,".env"),"-f",filepath.Join(edgeRoot,"compose.yml"),
             "down","--volumes","--remove-orphans")
     })
     probe:=func(){

@@ -19,7 +19,7 @@ Do not deploy it into an existing application or production Docker host.
   `E2E_FAIL_HEALTH=1` in the server-local `.env` to exercise each failure
   boundary. Reset the flag before retrying; keep `deploy/bluegreen.yml` unchanged
   for a given release. Never use these flags in a production project.
-- The application slot exposes no host port. Only the separate Caddy service
+- The application slot exposes no host port. Only the host-wide Edge Caddy service
   listens on host ports, bound to loopback by the example `.env`.
 
 ## Isolated SSH destination

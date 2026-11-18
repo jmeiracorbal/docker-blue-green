@@ -91,6 +91,8 @@ To enable remote deployment, add the verified SSH target to the same configurati
 
 The file also contains optional OpenBao KV references. Legacy `deploy/routes.json` and `deploy/secrets.json` are rejected rather than silently ignored: move their configuration into the new YAML before deploying. Docker Compose retains service definitions, persistent volumes and networking. The immutable release JSON remains a runtime input (image digests and version), and the engine rejects a release whose project or routes differ from the YAML contract. `bluegreen config export` validates the OCI registry configuration and emits project, routes, registry and optional deployment settings as JSON for the reusable workflows. It never includes OpenBao references, tokens or SSH private keys.
 
+Set the environment variables required by the generated Compose files and the shared Edge installation. Edge is a single host-wide Caddy managed by bluegreen under the sibling `edge/` directory of the project deployment roots; each project owns exactly one `apps/<project>.caddy` route file. Shared Caddy and its network are provisioned/reconciled once, never created in an application's infrastructure Compose. All applications on a server must use identical Edge configuration (`DEPLOY_NETWORK`, `CADDY_IMAGE`, `CADDY_ACME_EMAIL`, `HTTP_PORT`, `HTTPS_PORT`); a mismatch fails explicitly. See [Edge](edge/README.md).
+
 Set the environment variables required by the generated Compose files. Application images use per-service variables such as `API_IMAGE` so that releases can provide immutable image references. Host-published application ports are converted into container-only exposed ports; shared infrastructure remains outside the Blue/Green slots.
 
 The initializer does not start containers. It rejects configurations that cannot be separated safely, and does not overwrite customized deployment files.
@@ -135,7 +137,7 @@ The deployment server retains its own non-secret Compose `.env` file in the depl
 
 The deployment derives the registry hostname and exact image references from the release manifest; it does not need a second set of registry destination variables. No cloud-provider-specific identifiers are required.
 
-The remote workflow runs over verified SSH. Shared infrastructure remains up while the inactive application slot is prepared, then Caddy is reloaded only after the new containers pass their healthchecks. The previous slot is preserved for rollback. A full server-level end-to-end test must be performed before using the workflow for production traffic.
+The remote workflow runs over verified SSH. Shared Edge and project infrastructure remain up while the inactive application slot is prepared, then the shared Caddy is reloaded only after the new containers pass their healthchecks. The previous slot is preserved for rollback. A full server-level end-to-end test must be performed before using the workflow for production traffic.
 
 ## Declarative deployment lifecycle
 

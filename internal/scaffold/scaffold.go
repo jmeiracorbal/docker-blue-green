@@ -129,32 +129,8 @@ func Generate(o Options) ([]File, error) {
 	}
 	rebasePaths(app, o.SourcePath, filepath.Join(o.Root, "deploy"))
 	rebasePaths(infra, o.SourcePath, filepath.Join(o.Root, "deploy", "infrastructure"))
-	if _, exists := infraServices["caddy"]; !exists {
-		infraServices["caddy"] = map[string]any{
-			"image":       "${CADDY_IMAGE}",
-			"environment": map[string]any{"CADDY_ACME_EMAIL": "${CADDY_ACME_EMAIL}"},
-			"ports":       []any{"${HTTP_PORT}:80/tcp", "${HTTPS_PORT}:443/tcp", "${HTTPS_PORT}:443/udp"},
-			"volumes":     []any{"./caddy/Caddyfile:/etc/caddy/Caddyfile:ro", "./caddy/routes:/etc/caddy/routes:ro", "caddy_data:/data", "caddy_config:/config"},
-			"networks":    map[string]any{"bluegreen": nil}, "restart": "unless-stopped",
-		}
-		vols, _ := asMap(infra["volumes"])
-		if vols == nil {
-			vols = map[string]any{}
-			infra["volumes"] = vols
-		}
-		if _, exists := vols["caddy_data"]; exists {
-			return nil, errors.New("volume caddy_data already exists; cannot provision Caddy safely")
-		}
-		if _, exists := vols["caddy_config"]; exists {
-			return nil, errors.New("volume caddy_config already exists; cannot provision Caddy safely")
-		}
-		vols["caddy_data"] = map[string]any{}
-		vols["caddy_config"] = map[string]any{}
-	}
-	// The Caddy service must be present in the shared infrastructure.
-	if _, exists := appServices["caddy"]; exists {
-		return nil, errors.New("caddy must be classified as infrastructure")
-	}
+    if _,exists:=appServices["caddy"];exists{return nil,errors.New("Caddy belongs to the shared host Edge, not the application")}
+    if _,exists:=infraServices["caddy"];exists{return nil,errors.New("Caddy belongs to the shared host Edge, not project infrastructure")}
 	// Remove fields that cannot be independent between Compose projects.
 	for _, model := range []map[string]any{app, infra} {
 		delete(model, "version")
@@ -162,14 +138,17 @@ func Generate(o Options) ([]File, error) {
 	appData := marshalYAML(app)
 	infraData := marshalYAML(infra)
 
-	files := []File{
-		{Path: "deploy/bluegreen.yml", Data: config.Initial()},
-		{Path: "deploy/compose.yml", Data: appData},
-		{Path: "deploy/infrastructure/compose.yml", Data: infraData},
-		{Path: "deploy/infrastructure/caddy/Caddyfile", Data: []byte("{\n    email {$CADDY_ACME_EMAIL}\n}\n\nimport /etc/caddy/routes/*.caddy\n")},
-		{Path: "deploy/infrastructure/caddy/routes/.gitkeep", Data: []byte{}},
-	}
-	vars := map[string]bool{"PROJECT_NAME": true, "DEPLOYMENT_SLOT": true}
+    files:=[]File{
+        {Path:"deploy/bluegreen.yml",Data:config.Initial()},
+        {Path:"deploy/compose.yml",Data:appData},
+    }
+    if len(infraServices)>0 {
+        files=append(files,File{Path:"deploy/infrastructure/compose.yml",Data:infraData})
+    }
+	vars := map[string]bool{
+        "PROJECT_NAME":true,"DEPLOYMENT_SLOT":true,"DEPLOY_NETWORK":true,
+        "CADDY_IMAGE":true,"CADDY_ACME_EMAIL":true,"HTTP_PORT":true,"HTTPS_PORT":true,
+    }
 	for _, file := range files {
 		for _, match := range envPattern.FindAllSubmatch(file.Data, -1) {
 			vars[string(match[1])] = true
@@ -185,14 +164,11 @@ func Generate(o Options) ([]File, error) {
 }
 
 func emptyScaffold() []File {
-	return []File{
-		{Path: "deploy/bluegreen.yml", Data: config.Initial()},
-		{Path: "deploy/compose.yml", Data: []byte("name: \"${PROJECT_NAME}-${DEPLOYMENT_SLOT}\"\nservices:\n  app:\n    image: \"${APPLICATION_IMAGE}\"\n    expose:\n      - \"${APPLICATION_PORT}\"\n    networks:\n      bluegreen:\n        aliases:\n          - \"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-app\"\nnetworks:\n  bluegreen:\n    external: true\n    name: \"${DEPLOY_NETWORK}\"\n")},
-		{Path: "deploy/infrastructure/compose.yml", Data: []byte("name: \"${PROJECT_NAME}-infrastructure\"\nservices:\n  caddy:\n    image: \"${CADDY_IMAGE}\"\n    environment:\n      CADDY_ACME_EMAIL: \"${CADDY_ACME_EMAIL}\"\n    ports:\n      - \"${HTTP_PORT}:80/tcp\"\n      - \"${HTTPS_PORT}:443/tcp\"\n      - \"${HTTPS_PORT}:443/udp\"\n    volumes:\n      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro\n      - ./caddy/routes:/etc/caddy/routes:ro\n      - caddy_data:/data\n      - caddy_config:/config\n    networks:\n      - bluegreen\nnetworks:\n  bluegreen:\n    name: \"${DEPLOY_NETWORK}\"\nvolumes:\n  caddy_data: {}\n  caddy_config: {}\n")},
-		{Path: "deploy/infrastructure/caddy/Caddyfile", Data: []byte("{\n    email {$CADDY_ACME_EMAIL}\n}\n\nimport /etc/caddy/routes/*.caddy\n")},
-		{Path: "deploy/infrastructure/caddy/routes/.gitkeep", Data: []byte{}},
-		{Path: ".env.example", Data: []byte("APPLICATION_IMAGE=\nAPPLICATION_PORT=\nCADDY_ACME_EMAIL=\nCADDY_IMAGE=\nDEPLOYMENT_SLOT=\nDEPLOY_NETWORK=\nHTTPS_PORT=\nHTTP_PORT=\nPROJECT_NAME=\n")},
-	}
+    return []File{
+        {Path:"deploy/bluegreen.yml",Data:config.Initial()},
+        {Path:"deploy/compose.yml",Data:[]byte("name: \"${PROJECT_NAME}-${DEPLOYMENT_SLOT}\"\nservices:\n  app:\n    image: \"${APPLICATION_IMAGE}\"\n    expose:\n      - \"${APPLICATION_PORT}\"\n    networks:\n      bluegreen:\n        aliases:\n          - \"${PROJECT_NAME}-${DEPLOYMENT_SLOT}-app\"\nnetworks:\n  bluegreen:\n    external: true\n    name: \"${DEPLOY_NETWORK}\"\n")},
+        {Path:".env.example",Data:[]byte("APPLICATION_IMAGE=\nAPPLICATION_PORT=\nCADDY_ACME_EMAIL=\nCADDY_IMAGE=\nDEPLOYMENT_SLOT=\nDEPLOY_NETWORK=\nHTTPS_PORT=\nHTTP_PORT=\nPROJECT_NAME=\n")},
+    }
 }
 
 func classify(names, apps, infra []string, in io.Reader, out io.Writer) (map[string]string, error) {
@@ -406,7 +382,7 @@ func prepareNetworks(app, infra map[string]any, appServices, infraServices map[s
 		}
 	}
 	appNets["bluegreen"] = map[string]any{"external": true, "name": "${DEPLOY_NETWORK}"}
-	infraNets["bluegreen"] = map[string]any{"name": "${DEPLOY_NETWORK}"}
+	infraNets["bluegreen"] = map[string]any{"external": true, "name": "${DEPLOY_NETWORK}"}
 	app["networks"] = appNets
 	infra["networks"] = infraNets
 	for _, group := range []struct {

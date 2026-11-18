@@ -327,3 +327,16 @@ func (cfg Document) ValidateLifecycleServices(images map[string]string) error {
     }
     return nil
 }
+
+// ValidateInfrastructureServices rejects a second project-owned Caddy container.
+// Shared Caddy is provided exclusively by the host-wide Edge installation.
+func (cfg Document) ValidateInfrastructureServices(root string) error {
+    path:=filepath.Join(root,"deploy","infrastructure","compose.yml")
+    data,err:=os.ReadFile(path)
+    if errors.Is(err,os.ErrNotExist){return nil}
+    if err!=nil{return err}
+    var model struct { Services map[string]any `yaml:"services"` }
+    if err:=yaml.Unmarshal(data,&model);err!=nil{return fmt.Errorf("parse infrastructure Compose: %w",err)}
+    if _,found:=model.Services["caddy"];found{return errors.New("per-project Caddy is forbidden; use shared Edge")}
+    return nil
+}

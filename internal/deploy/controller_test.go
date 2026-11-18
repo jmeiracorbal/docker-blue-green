@@ -45,6 +45,11 @@ func (f *fakeRunner) Output(_ context.Context, _ string, _ []string, bin string,
 func testRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
+    t.Setenv("DEPLOY_NETWORK","bluegreen-test-edge")
+    t.Setenv("CADDY_IMAGE","caddy:2.10-alpine")
+    t.Setenv("CADDY_ACME_EMAIL","test@example.invalid")
+    t.Setenv("HTTP_PORT","18080")
+    t.Setenv("HTTPS_PORT","18443")
 	for _, p := range []string{"deploy/compose.yml", "deploy/infrastructure/compose.yml", "deploy/infrastructure/caddy/Caddyfile"} {
 		target := filepath.Join(root, p)
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
@@ -93,9 +98,11 @@ func TestDeployAndRollback(t *testing.T) {
 	if err := c.Deploy(ctx, release("v1")); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.calls) != count {
-		t.Fatal("re-deployed same image digest")
-	}
+	for _,call:=range runner.calls[count:] {
+        if strings.Contains(call,filepath.Join(root,"deploy","compose.yml")) {
+            t.Fatal("re-deployed the unchanged application release")
+        }
+    }
 	second := release("v2")
 	second.Images["api"] = "ghcr.io/example/api@sha256:" + strings.Repeat("b", 64)
 	if err := c.Deploy(ctx, second); err != nil {

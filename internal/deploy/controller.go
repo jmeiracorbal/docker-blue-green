@@ -21,6 +21,7 @@ import (
 	"time"
 
     "github.com/jmeiracorbal/docker-blue-green/internal/config"
+    "github.com/jmeiracorbal/docker-blue-green/internal/edge"
 )
 
 type Route struct {
@@ -180,11 +181,8 @@ func (c Controller) paths() (root, app, infra, stateDir string, err error) {
 	}
 	app = filepath.Join(root, "deploy", "compose.yml")
 	infra = filepath.Join(root, "deploy", "infrastructure", "compose.yml")
-	for _, p := range []string{app, infra} {
-		if _, err = os.Stat(p); err != nil {
-			return "", "", "", "", fmt.Errorf("missing Compose file %s: %w", p, err)
-		}
-	}
+	if _,err=os.Stat(app);err!=nil{return "","","","",fmt.Errorf("missing application Compose: %w",err)}
+    if _,err=os.Stat(infra);errors.Is(err,os.ErrNotExist){infra=""}else if err!=nil{return "","","","",err}
 	return root, app, infra, filepath.Join(root, ".bluegreen"), nil
 }
 func (c Controller) environment(r Release, slot string) []string {
@@ -283,50 +281,16 @@ func saveState(dir string, s State) error {
 	}
 	return atomicWrite(filepath.Join(dir, "state.json"), append(b, '\n'), 0600)
 }
-func routeFile(root, project string) string {
-	return filepath.Join(root, "deploy", "infrastructure", "caddy", "routes", project+".caddy")
+func routeFile(root,project string) string {
+    return filepath.Join(edge.Root(root),"apps",project+".caddy")
 }
-func renderRoutes(project, slot string, routes []Route) []byte {
-	cp := append([]Route(nil), routes...)
-	sort.Slice(cp, func(i, j int) bool { return cp[i].Host < cp[j].Host })
-	var b strings.Builder
-	for _, rt := range cp {
-		fmt.Fprintf(&b, "%s {\n    encode zstd gzip\n    reverse_proxy %s-%s-%s:%d\n}\n\n", rt.Host, project, slot, rt.Service, rt.Port)
-	}
-	return []byte(b.String())
+func (c Controller) edge(root string) edge.Manager {
+    return edge.Manager{Root:edge.Root(root),ProjectEnvFile:c.EnvFile,Runner:c.Runner}
 }
-func (c Controller) setRoutes(ctx context.Context, root, infra string, r Release, slot string, routes []Route) error {
-	path := routeFile(root, r.Project)
-	old, err := os.ReadFile(path)
-	existed := err == nil
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	next := renderRoutes(r.Project, slot, routes)
-	if len(next) == 0 {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	} else if err := atomicWrite(path, next, 0644); err != nil {
-		return err
-	}
-	validate := c.run(ctx, root, infra, r, slot, "exec", "-T", "caddy", "caddy", "validate", "--config", "/etc/caddy/Caddyfile")
-	if validate == nil {
-		validate = c.run(ctx, root, infra, r, slot, "exec", "-T", "caddy", "caddy", "reload", "--config", "/etc/caddy/Caddyfile")
-	}
-	if validate == nil {
-		return nil
-	}
-	// Restore the on-disk route, then reload the previous configuration.
-	if existed {
-		_ = atomicWrite(path, old, 0644)
-	} else {
-		_ = os.Remove(path)
-	}
-	if restoreErr := c.run(ctx, root, infra, r, slot, "exec", "-T", "caddy", "caddy", "reload", "--config", "/etc/caddy/Caddyfile"); restoreErr != nil {
-		return fmt.Errorf("switch failed: %v; old Caddy configuration could not be reloaded: %w", validate, restoreErr)
-	}
-	return validate
+func (c Controller) setRoutes(ctx context.Context,root string,r Release,slot string,routes []Route) error {
+    items:=make([]edge.Route,0,len(routes))
+    for _,route:=range routes {items=append(items,edge.Route{Host:route.Host,Service:route.Service,Port:route.Port})}
+    return c.edge(root).Publish(ctx,r.Project,slot,items)
 }
 func hash(r Release) string {
 	b, _ := json.Marshal(struct {
@@ -367,11 +331,11 @@ func (c Controller) verifyHealth(ctx context.Context, root, app string, r Releas
 	}
 	return nil
 }
-func (c Controller) reconcile(ctx context.Context, root, infra, stateDir string, r Release, s *State) error {
+func (c Controller) reconcile(ctx context.Context, root, stateDir string, r Release, s *State) error {
 	if s.Phase == "" {
 		return nil
 	}
-	if err := c.setRoutes(ctx, root, infra, r, s.ActiveSlot, s.ActiveRoutes); err != nil {
+	if err := c.setRoutes(ctx, root, r, s.ActiveSlot, s.ActiveRoutes); err != nil {
 		return fmt.Errorf("recover interrupted switch: %w", err)
 	}
 	s.Phase = ""
@@ -392,6 +356,7 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
     if err != nil { return err }
     if err := cfg.Validate(true); err != nil { return err }
     if err := cfg.ValidateApplicationServices(root); err != nil { return err }
+    if err := cfg.ValidateInfrastructureServices(root);err!=nil{return err}
     if err := cfg.ValidateLifecycleServices(r.Images);err!=nil{return err}
     if cfg.Project != r.Project { return errors.New("release project differs from deploy/bluegreen.yml") }
     if len(cfg.Routes) != len(r.Routes) { return errors.New("release routes differ from deploy/bluegreen.yml") }
@@ -426,16 +391,23 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 	snapshot, err := c.loadSecrets(ctx, root, r)
 	if err != nil { return fmt.Errorf("resolve OpenBao secrets: %w", err) }
 	currentHash := releaseHashWithSecrets(r, snapshot)
-	if s.ActiveHash == currentHash && s.ActiveVersion == r.Version && s.Phase == "" {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(routeFile(root, r.Project)), 0750); err != nil {
-		return fmt.Errorf("prepare Caddy route directory: %w", err)
-	}
-	if err = c.run(ctx, root, infra, r, "blue", "up", "-d", "--wait", "--wait-timeout", strconv.Itoa(int(c.WaitTimeout.Seconds()))); err != nil {
-		return fmt.Errorf("start infrastructure: %w", err)
-	}
-	if err = c.reconcile(ctx, root, infra, dir, r, &s); err != nil {
+	if err := c.edge(root).Ensure(ctx); err != nil {
+        return fmt.Errorf("reconcile shared Edge: %w",err)
+    }
+    if s.ActiveSlot!="" && s.Phase=="" {
+        if err:=c.setRoutes(ctx,root,r,s.ActiveSlot,s.ActiveRoutes);err!=nil {
+            return fmt.Errorf("reconcile project Edge routes: %w",err)
+        }
+    }
+    if s.ActiveHash == currentHash && s.ActiveVersion == r.Version && s.Phase == "" {
+        return nil
+    }
+	if infra!="" {
+        if err = c.run(ctx, root, infra, r, "blue", "up", "-d", "--wait", "--wait-timeout", strconv.Itoa(int(c.WaitTimeout.Seconds()))); err != nil {
+            return fmt.Errorf("start project infrastructure: %w", err)
+        }
+    }
+	if err = c.reconcile(ctx, root, dir, r, &s); err != nil {
 		return err
 	}
 	slot := otherSlot(s.ActiveSlot)
@@ -474,7 +446,7 @@ func (c Controller) Deploy(ctx context.Context, r Release) error {
 	if err = saveState(dir, s); err != nil {
 		return err
 	}
-	if err = c.setRoutes(ctx, root, infra, r, slot, r.Routes); err != nil {
+	if err = c.setRoutes(ctx, root, r, slot, r.Routes); err != nil {
 		return fmt.Errorf("switch Caddy traffic: %w", err)
 	}
 	next := State{ActiveSlot: slot, ActiveVersion: r.Version, ActiveHash: currentHash, ActiveLifecycleHash: lifecycleHash, PreviousLifecycleHash: s.ActiveLifecycleHash, ActiveRoutes: r.Routes, PreviousSlot: s.ActiveSlot, PreviousVersion: s.ActiveVersion, PreviousHash: s.ActiveHash, PreviousRoutes: s.ActiveRoutes, ActiveImages: r.Images, PreviousImages: s.ActiveImages, ActiveSecretOverlay: overlay, PreviousSecretOverlay: s.ActiveSecretOverlay}
@@ -491,7 +463,7 @@ func (c Controller) Rollback(ctx context.Context, project string) error {
 	if !projectPattern.MatchString(project) {
 		return fmt.Errorf("invalid project %q", project)
 	}
-	root, app, infra, dir, err := c.paths()
+	root, app, _, dir, err := c.paths()
 	if err != nil {
 		return err
 	}
@@ -516,7 +488,8 @@ func (c Controller) Rollback(ctx context.Context, project string) error {
 	if err := c.verifyHealth(ctx, root, app, previous, s.PreviousSlot); err != nil {
 		return fmt.Errorf("previous release is unhealthy: %w", err)
 	}
-	if err = c.setRoutes(ctx, root, infra, previous, s.PreviousSlot, s.PreviousRoutes); err != nil {
+	if err=c.edge(root).Ensure(ctx);err!=nil{return err}
+    if err = c.setRoutes(ctx, root, previous, s.PreviousSlot, s.PreviousRoutes); err != nil {
 		return err
 	}
 	restored := State{ActiveSlot: s.PreviousSlot, ActiveVersion: s.PreviousVersion, ActiveHash: s.PreviousHash, ActiveLifecycleHash: s.PreviousLifecycleHash, PreviousLifecycleHash: s.ActiveLifecycleHash, ActiveRoutes: s.PreviousRoutes, PreviousSlot: s.ActiveSlot, PreviousVersion: s.ActiveVersion, PreviousHash: s.ActiveHash, PreviousRoutes: s.ActiveRoutes, ActiveImages: s.PreviousImages, PreviousImages: s.ActiveImages, ActiveSecretRevision: s.PreviousSecretRevision, PreviousSecretRevision: s.ActiveSecretRevision, ActiveSecretOverlay: s.PreviousSecretOverlay, PreviousSecretOverlay: s.ActiveSecretOverlay, AutoReconcilePaused: true}
