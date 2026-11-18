@@ -28,21 +28,21 @@ jobs:
 
   publish:
     needs: validate
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@adfe87ec60f72310afbae0820065bdb6ed5f0072
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/publish-images.yml@007a49463462a310c825c79671653f4879273059
     with:
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
-      engine_ref: adfe87ec60f72310afbae0820065bdb6ed5f0072
+      engine_ref: 007a49463462a310c825c79671653f4879273059
     secrets:
       OCI_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   deploy:
     needs: publish
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@adfe87ec60f72310afbae0820065bdb6ed5f0072
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/deploy-remote.yml@007a49463462a310c825c79671653f4879273059
     with:
       version: ${{ github.event.release.tag_name }}
       source_ref: ${{ github.event.release.tag_name }}
-      engine_ref: adfe87ec60f72310afbae0820065bdb6ed5f0072
+      engine_ref: 007a49463462a310c825c79671653f4879273059
     secrets:
       SERVER_SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
       OCI_REGISTRY_PULL_USERNAME: ${{ secrets.OCI_REGISTRY_PULL_USERNAME }}
@@ -68,9 +68,9 @@ permissions:
 
 jobs:
   validate:
-    uses: jmeiracorbal/docker-blue-green/.github/workflows/validate-consumer.yml@adfe87ec60f72310afbae0820065bdb6ed5f0072
+    uses: jmeiracorbal/docker-blue-green/.github/workflows/validate-consumer.yml@007a49463462a310c825c79671653f4879273059
     with:
-      engine_ref: adfe87ec60f72310afbae0820065bdb6ed5f0072
+      engine_ref: 007a49463462a310c825c79671653f4879273059
       validation_env_file: .github/blue-green.env
 
   repository-secrets:
@@ -92,7 +92,7 @@ jobs:
           go-version: '1.23'
       - name: Check required repository secrets
         env:
-          ENGINE_REF: adfe87ec60f72310afbae0820065bdb6ed5f0072
+          ENGINE_REF: 007a49463462a310c825c79671653f4879273059
         shell: bash
         run: |
           set -euo pipefail
