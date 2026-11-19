@@ -85,6 +85,40 @@ bluegreen secrets plan
 
 La PR comprueba la estructura y el servicio destino. **No confirma** que la clave esté provisionada en OpenBao ni que funcione contra el proveedor.
 
+### Migrar variables de un .env existente: aprovisionamiento manual
+
+**Actualmente, el CLI no importa ni sincroniza automáticamente un archivo `.env` con OpenBao.** `bluegreen secrets add` crea una referencia, no un valor KV. `bluegreen secrets plan` solo enumera requisitos; `bluegreen secrets setup` instala el proxy del proyecto, no los secretos.
+
+Partiendo de un `.env` de la aplicación:
+
+```dotenv
+DATABASE_HOST=postgres
+DATABASE_PORT=5432
+DATABASE_PASSWORD=[valor oculto]
+JWT_SECRET=[valor oculto]
+```
+
+La migración actual requiere estas operaciones explícitas:
+
+1. **Desarrollador:** identifica los valores sensibles. Los parámetros no sensibles necesarios para interpolar Docker Compose permanecen en el `.env` local del servidor.
+2. **Administrador de OpenBao:** provisiona **manualmente los valores reales** mediante una interfaz autorizada, el CLI o la API de OpenBao KV v2. Por ejemplo, `projects/miapi/database` con campo `password` y `projects/miapi/authentication` con campo `jwt_secret`. Esto requiere permisos OpenBao; `docker-blue-green` no crea esas entradas.
+3. **Desarrollador:** registra las referencias a los valores ya provisionados:
+
+   ```bash
+   bluegreen secrets add --project miapi --mount kv --service api \
+     --name database_password --path database --field password
+   bluegreen secrets add --project miapi --service api \
+     --name jwt_secret --path authentication --field jwt_secret
+   bluegreen secrets plan
+   ```
+
+4. **Administrador del servidor:** con el proxy instalado y el contrato del proyecto disponible en el host, ejecuta `bluegreen secrets check --dir . --project miapi`. Comprueba el acceso a los valores reales sin imprimirlos.
+5. **Desarrollador de la aplicación:** adapta la lectura para consumir `/run/secrets/database_password` y `/run/secrets/jwt_secret`. **El motor no crea automáticamente las variables de entorno `DATABASE_PASSWORD` o `JWT_SECRET`.** Si la aplicación consulta únicamente variables de entorno, necesita admitir explícitamente la lectura de archivos de secretos.
+
+Tras verificar el despliegue utilizando los archivos montados, deben retirarse los secretos en texto plano de los archivos `.env` desplegados y de otras copias mediante un procedimiento controlado. No se eliminan antes de adaptar y verificar la aplicación. El `.env` local del servidor se sigue utilizando para los ajustes no sensibles de Compose.
+
+Actualmente **no existe `bluegreen secrets import`**, no se crean automáticamente valores KV a partir de cada entrada del `.env` y tampoco se inyectan automáticamente variables de entorno.
+
 ### Descubrimiento interactivo opcional
 
 En el **servidor de despliegue**, cuando el proxy está configurado y el contrato del proyecto está disponible:

@@ -255,7 +255,7 @@ validation integrations later.
 The complete developer-to-administrator flow, optional secret references, file delivery, version rotation and rollback are documented in the [secrets lifecycle guide](docs/secrets.md) ([Spanish edition](docs/secrets.es.md)). GitHub Actions repository secrets are independent of OpenBao KV values.
 
 
-OpenBao is optional. The **OpenBao server** stores secrets centrally. An independent **OpenBao Proxy** runs as a Linux systemd service for each project, outside application containers. The CLI connects automatically through `/run/bluegreen/<project>/openbao.sock`; the socket, proxy credentials, and any supervisors are never mounted into the images.
+OpenBao is optional. The **OpenBao server** stores secrets centrally. Existing `.env` files are **not imported automatically**: an administrator must provision KV values, while `bluegreen secrets add` records references only. Applications receive these secrets as files, not automatically as environment variables. See [migrating `.env` variables](docs/secrets.md#migrating-existing-env-variables-manual-provisioning) ([Spanish](docs/secrets.es.md#migrar-variables-de-un-env-existente-aprovisionamiento-manual)). An independent **OpenBao Proxy** runs as a Linux systemd service for each project, outside application containers. The CLI connects automatically through `/run/bluegreen/<project>/openbao.sock`; the socket, proxy credentials, and any supervisors are never mounted into the images.
 
 ### Configure the proxy once through the CLI
 

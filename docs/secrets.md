@@ -79,6 +79,40 @@ bluegreen secrets plan
 
 The pull-request workflow verifies the service target and reference structure. It **does not** access the real OpenBao value or prove that the provider accepts it.
 
+### Migrating existing .env variables: manual provisioning
+
+**The current CLI does not import or sync an existing `.env` file into OpenBao.** `bluegreen secrets add` creates a reference, not a KV value. `bluegreen secrets plan` reports requirements only; `bluegreen secrets setup` installs the project proxy, not the secrets themselves.
+
+Given an existing application's `.env`:
+
+```dotenv
+DATABASE_HOST=postgres
+DATABASE_PORT=5432
+DATABASE_PASSWORD=[redacted]
+JWT_SECRET=[redacted]
+```
+
+The current migration is explicit:
+
+1. **Developer:** identify which values are sensitive. Non-sensitive settings needed for Compose interpolation stay in the server-local `.env`.
+2. **OpenBao administrator:** manually provision the *real* values in an authorized OpenBao KV v2 interface, CLI or API: `projects/myapi/database` with field `password` and `projects/myapi/authentication` with field `jwt_secret`. The administrator needs OpenBao permissions; `docker-blue-green` does not populate these entries.
+3. **Developer:** declare the existing values as references in the project repository:
+
+   ```bash
+   bluegreen secrets add --project myapi --mount kv --service api \
+     --name database_password --path database --field password
+   bluegreen secrets add --project myapi --service api \
+     --name jwt_secret --path authentication --field jwt_secret
+   bluegreen secrets plan
+   ```
+
+4. **Server administrator:** with the OpenBao proxy installed and the project contract present on the host, execute `bluegreen secrets check --dir . --project myapi`. This checks access to the real values without printing them.
+5. **Application developer:** read `/run/secrets/database_password` and `/run/secrets/jwt_secret` at runtime. **The engine does not automatically set the environment variables `DATABASE_PASSWORD` or `JWT_SECRET`.** Applications that currently read environment variables must explicitly support reading secret files.
+
+After verifying a successful deployment using the mounted files, remove plaintext secrets from deployed `.env` files and other copies through a controlled credential-management procedure. Do not remove them before the application has been adapted and verified. The server-local `.env` is still used for non-secret Compose settings.
+
+There is currently **no `bluegreen secrets import` command**, no automatic one-by-one creation of OpenBao KV entries from `.env`, and no automatic environment-variable injection.
+
 ### Optional interactive discovery on the host
 
 Once the proxy is configured and the project contract is available on the **deployment host**, use:
