@@ -67,21 +67,31 @@ func TestRealOpenBaoDotenvImport(t *testing.T) {
 	bao := filepath.Join(root, "bao")
 	must(nil, "docker", "cp", container+":/usr/bin/bao", bao)
 	if err := os.Chmod(bao, 0700); err != nil { t.Fatal(err) }
-	var caPath string
+	var caPath, lastTLSStatus, lastCopyError string
 	ready := false
 	for i := 0; i < 60; i++ {
-		_, _ = run(nil, "docker", "cp", container+":/tmp/bluegreen-tls/.", certDir)
+		if _, copyErr := run(nil, "docker", "cp", container+":/tmp/bluegreen-tls/.", certDir); copyErr != nil {
+			lastCopyError = copyErr.Error()
+		}
 		caPath = findGeneratedOpenBaoCA(certDir)
 		if caPath != "" {
 			adminEnv := []string{"BAO_ADDR="+address, "BAO_TOKEN="+token, "BAO_CACERT="+caPath}
-			if _, err := run(adminEnv, bao, "status"); err == nil {
+			statusCmd := exec.CommandContext(ctx, bao, "status")
+			statusCmd.Env = append(os.Environ(), adminEnv...)
+			output, statusErr := statusCmd.CombinedOutput()
+			if statusErr == nil {
 				ready = true
 				break
 			}
+			lastTLSStatus = strings.ReplaceAll(string(output), token, "[redacted]")
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	if !ready { t.Fatal("real OpenBao TLS dev server did not become ready") }
+	if !ready {
+		state, _ := run(nil, "docker", "inspect", "--format", "{{.State.Status}}/{{.State.ExitCode}}", container)
+		t.Fatalf("OpenBao TLS test endpoint unavailable: container=%s, CA_found=%t, copy=%s, TLS_status=%s",
+			state, caPath != "", lastCopyError, strings.TrimSpace(lastTLSStatus))
+	}
 	adminEnv := []string{"BAO_ADDR="+address, "BAO_TOKEN="+token, "BAO_CACERT="+caPath}
 	must(adminEnv, bao, "secrets", "enable", "-path=kv", "-version=2", "kv")
 
