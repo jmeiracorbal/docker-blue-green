@@ -17,7 +17,7 @@ import (
 )
 
 func checkSecrets(args []string, out io.Writer) error {
-    if len(args)==0 { return errors.New("usage: bluegreen secrets plan|check|add|list|fields|setup|reconcile") }
+    if len(args)==0 { return errors.New("usage: bluegreen secrets plan|check|add|import|list|fields|setup|reconcile") }
     switch args[0] {
     case "plan":
         return planSecrets(args[1:],out)
@@ -52,6 +52,8 @@ func checkSecrets(args []string, out io.Writer) error {
         return err
     case "add":
         return addSecretReference(args[1:],out)
+    case "import":
+        return importSecrets(args[1:],os.Stdin,out)
     case "list","fields":
         return discoverSecrets(args[0],args[1:],out)
     case "setup":
@@ -99,21 +101,15 @@ func addSecretReference(args []string,out io.Writer) error {
         if err:=selectKVReference(cfg.Project,effectiveMount,path,field,os.Stdin,out);err!=nil{return err}
     }
     ref:=openbao.Reference{Service:*service,Name:*name,Path:*path,Field:*field}
-    if cfg.OpenBao==nil{cfg.OpenBao=&config.OpenBao{Mount:effectiveMount}}
-    for _,prev:=range cfg.OpenBao.Secrets{
-        if prev.Service==ref.Service && prev.Name==ref.Name {
-            if prev==ref {
-                _,err:=fmt.Fprintf(out,"OpenBao reference already configured: %s/%s\n",ref.Service,ref.Name)
-                return err
-            }
-            return errors.New("OpenBao reference already exists with different settings")
-        }
+    next,added,err:=appendSecretReferences(cfg,effectiveMount,[]openbao.Reference{ref})
+    if err!=nil{return err}
+    if added==0 {
+        _,err=fmt.Fprintf(out,"OpenBao reference already configured: %s/%s\n",ref.Service,ref.Name)
+        return err
     }
-    cfg.OpenBao.Secrets=append(cfg.OpenBao.Secrets,ref)
-    if err:=cfg.Validate(false);err!=nil{return err}
-    if err:=cfg.ValidateApplicationServices(*dir);err!=nil{return err}
+    if err:=next.ValidateApplicationServices(*dir);err!=nil{return err}
     if _,err:=os.Stat(config.Path(*dir));err!=nil{return err}
-    if err:=config.Save(*dir,cfg);err!=nil{return err}
+    if err:=config.Save(*dir,next);err!=nil{return err}
     _,err=fmt.Fprintf(out,"OpenBao secret reference configured: %s/%s\n",ref.Service,ref.Name)
     return err
 }
