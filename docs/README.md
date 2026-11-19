@@ -1,6 +1,6 @@
 # Project integration and deployment lifecycle
 
-[Main README](../README.md) · **English** · [Español](README.es.md) · [Shared Edge](../edge/README.md)
+[Main README](../README.md) · **English** · [Español](README.es.md) · [Secrets lifecycle](secrets.md) · [Shared Edge](../edge/README.md)
 
 This guide describes the **implemented** integration flow for a Docker Compose application, from its first `bluegreen init` through CI, OCI image publication, optional SSH deployment, Edge route switching and rollback. GitHub Actions validation does **not** itself deploy containers or prove production health.
 
@@ -115,6 +115,10 @@ To actually prevent merging when checks fail, configure a GitHub branch ruleset 
 
 `OpenBao` is separate: PR validation checks the *declared references* but never reads or provisions real KV values. Live OpenBao availability is checked in the trusted deployment environment using `bluegreen secrets check`.
 
+### Optional OpenBao application secrets
+
+OpenBao is not required by the integration or deployment process. When an application needs centrally managed credentials, the developer declares references with `bluegreen secrets add` and the server administrator provisions the actual KV values, project-scoped AppRole and proxy. See the complete [secrets lifecycle](secrets.md) for exact commands, roles, presence checks, read-only container delivery, rotation and rollback. GitHub repository secrets are a separate CI/CD concern.
+
 ## 5. What happens on a pull request?
 
 ```mermaid
@@ -177,6 +181,7 @@ Use `bluegreen config check` for the local contract and `bluegreen secrets plan`
 ## Related references
 
 - [Main project README](../README.md)
+- [Secrets lifecycle (GitHub and optional OpenBao)](secrets.md)
 - [Shared Edge architecture](../edge/README.md)
 - [Remote end-to-end fixture](../examples/remote-e2e/README.md)
 - [Reusable consumer validation](../.github/workflows/validate-consumer.yml)

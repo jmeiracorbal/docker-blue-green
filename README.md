@@ -2,13 +2,13 @@
 
 [![Test CLI](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-cli.yml/badge.svg?branch=main)](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-cli.yml) [![Deployment engine](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-engine.yml/badge.svg?branch=main)](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-engine.yml) [![Compose validation](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/validate.yml) [![OpenBao integration](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-openbao.yml/badge.svg?branch=main)](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-openbao.yml)
 
-**Documentation:** [Deployment lifecycle (English)](docs/README.md) · [Deployment lifecycle (Spanish)](docs/README.es.md) · [Shared Edge](edge/README.md)
+**Documentation:** [Deployment lifecycle (English)](docs/README.md) · [Deployment lifecycle (Spanish)](docs/README.es.md) · [Secrets lifecycle (English)](docs/secrets.md) · [Secrets lifecycle (Spanish)](docs/secrets.es.md) · [Shared Edge](edge/README.md)
 
 A reusable, framework-independent foundation for Blue-Green deployments using Docker Compose and Caddy.
 
 ## Documentation
 
-The complete path from an existing Compose project to a guarded pull request, OCI release, optional SSH deployment, shared Edge routing and rollback is documented in [English](docs/README.md) and [Spanish](docs/README.es.md). Both guides distinguish checks that run in GitHub Actions from production-host operations.
+The complete path from an existing Compose project to a guarded pull request, OCI release, optional SSH deployment, shared Edge routing and rollback is documented in [English](docs/README.md) and [Spanish](docs/README.es.md). Both guides distinguish checks that run in GitHub Actions from production-host operations. The optional OpenBao and GitHub repository secrets lifecycle is documented separately in [English](docs/secrets.md) and [Spanish](docs/secrets.es.md).
 
 ## Features
 
@@ -251,6 +251,9 @@ or required by this change. They may be evaluated as separate optional
 validation integrations later.
 
 ## OpenBao integration
+
+The complete developer-to-administrator flow, optional secret references, file delivery, version rotation and rollback are documented in the [secrets lifecycle guide](docs/secrets.md) ([Spanish edition](docs/secrets.es.md)). GitHub Actions repository secrets are independent of OpenBao KV values.
+
 
 OpenBao is optional. The **OpenBao server** stores secrets centrally. An independent **OpenBao Proxy** runs as a Linux systemd service for each project, outside application containers. The CLI connects automatically through `/run/bluegreen/<project>/openbao.sock`; the socket, proxy credentials, and any supervisors are never mounted into the images.
 

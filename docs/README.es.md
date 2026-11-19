@@ -1,6 +1,6 @@
 # Integración en proyectos y ciclo de despliegue
 
-[README principal](../README.md) · [English](README.md) · **Español** · [Edge compartido](../edge/README.md)
+[README principal](../README.md) · [English](README.md) · **Español** · [Ciclo de secretos](secrets.es.md) · [Edge compartido](../edge/README.md)
 
 Esta guía describe el flujo **implementado** para incorporar una aplicación Docker Compose a `docker-blue-green`: inicialización, validación en CI, publicación de imágenes OCI, despliegue remoto opcional, conmutación de rutas en Edge y rollback. Que una PR pase las comprobaciones de GitHub Actions **no demuestra** que los contenedores hayan arrancado ni que el despliegue de producción funcione.
 
@@ -115,6 +115,10 @@ Para bloquear una fusión por un error, el responsable del repositorio debe conf
 
 **OpenBao es independiente de los secrets de GitHub.** En la PR se validan las referencias declaradas, pero no se leen ni siembran valores KV reales. La disponibilidad de estos se comprueba en el servidor confiable con `bluegreen secrets check`.
 
+### Secretos de aplicación opcionales mediante OpenBao
+
+OpenBao no es un requisito para integrar ni desplegar el proyecto. Si la aplicación necesita credenciales centralizadas, el desarrollador declara referencias mediante `bluegreen secrets add`; el administrador del servidor provisiona los valores KV reales, el AppRole restringido y el proxy. El [ciclo de vida de los secretos](secrets.es.md) explica los comandos, responsables, comprobaciones, archivos de solo lectura en contenedores, rotación y rollback. Los secrets del repositorio GitHub pertenecen al proceso CI/CD y se gestionan por separado.
+
 ## 5. Qué ocurre al abrir una pull request
 
 ```mermaid
@@ -177,6 +181,7 @@ Este comando se ejecuta en el servidor autorizado, no en el validador de PR. El 
 ## Referencias
 
 - [README principal](../README.md)
+- [Ciclo de secretos (GitHub y OpenBao opcional)](secrets.es.md)
 - [Arquitectura de Edge compartido](../edge/README.md)
 - [Proyecto de pruebas end-to-end](../examples/remote-e2e/README.md)
 - [Workflow reutilizable de validación](../.github/workflows/validate-consumer.yml)
