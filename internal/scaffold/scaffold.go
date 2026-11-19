@@ -79,7 +79,8 @@ func Generate(o Options) ([]File, error) {
 		if len(o.AppServices) > 0 || len(o.InfrastructureServices) > 0 {
 			return nil, errors.New("service classifications require an existing Compose source")
 		}
-		return append(emptyScaffold(), publishWorkflowFile()), nil
+		files:=emptyScaffold()
+        return append(files,publishWorkflowFile(),validationWorkflowFile(),validationEnvironmentFile(files[2].Data)),nil
 	}
 	for _, match := range interpolationPattern.FindAllSubmatch(o.ComposeJSON, -1) {
 		if !variableNamePattern.Match(match[1]) {
@@ -165,7 +166,7 @@ func Generate(o Options) ([]File, error) {
 		fmt.Fprintf(&env, "%s=\n", name)
 	}
 	files = append(files, File{Path: ".env.example", Data: env.Bytes()})
-	files = append(files, publishWorkflowFile())
+	files = append(files,publishWorkflowFile(),validationWorkflowFile(),validationEnvironmentFile(env.Bytes()))
 	return files, nil
 }
 

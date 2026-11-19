@@ -94,6 +94,9 @@ jobs:
 
   publish:
     needs: discover
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

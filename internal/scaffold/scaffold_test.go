@@ -78,7 +78,7 @@ func TestNoSourceGeneratesBasicScaffold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 4 {
+	if len(files) != 6 {
 		t.Fatalf("got %d files", len(files))
 	}
 	if !strings.Contains(find(files, "deploy/compose.yml"), "${APPLICATION_IMAGE}") {
@@ -171,9 +171,11 @@ func TestPublishedWorkflowUsesProjectContract(t *testing.T) {
     workflow:=find(files,".github/workflows/release.yml")
     for _,expected:=range []string{
         "on:", "types: [published]",
-        "secrets.OCI_REGISTRY_TOKEN","secrets.SERVER_SSH_PRIVATE_KEY",
+        "secrets.GITHUB_TOKEN","secrets.SERVER_SSH_PRIVATE_KEY",
         "secrets.OCI_REGISTRY_PULL_TOKEN","secrets.OCI_REGISTRY_PULL_USERNAME",
         "github.event.release.tag_name",
+        "uses: ./.github/workflows/blue-green.yml",
+        "secrets: inherit",
         "docker-blue-green/.github/workflows/publish-images.yml@",
         "docker-blue-green/.github/workflows/deploy-remote.yml@",
         "engine_ref:",
@@ -190,9 +192,72 @@ func TestPublishedWorkflowUsesProjectContract(t *testing.T) {
     if strings.Contains(workflow,"@main"){t.Fatal("reusable workflows must use immutable commits")}
     engine:=regexp.MustCompile(`engine_ref: ([0-9a-f]{40})`)
     refs:=engine.FindAllStringSubmatch(workflow,-1)
-    if len(refs)!=2 || refs[0][1]!=refs[1][1]{
+    if len(refs)!=2 || refs[0][1]!=refs[1][1] {
         t.Fatalf("publishing and deployment must use the same immutable engine: %v",refs)
     }
     pinned:=strings.Count(workflow,"@"+refs[0][1])
     if pinned!=2{t.Fatalf("reusable workflows must use the same pinned engine; got %d",pinned)}
+    if !strings.Contains(workflow,"  publish:\n    needs: validate") {
+        t.Fatal("release publication must require successful Blue-Green validation")
+    }
+}
+
+func TestGeneratedRequiredBlueGreenWorkflowAndCIEnv(t *testing.T) {
+    files,err:=Generate(Options{})
+    if err!=nil{t.Fatal(err)}
+    workflow:=find(files,".github/workflows/blue-green.yml")
+    for _,expected:=range []string{
+        "name: blue-green",
+        "  pull_request:",
+        "  push:",
+        "  merge_group:",
+        "    needs: [validate, repository-secrets]",
+        "    if: ${{ always() }}",
+        "    name: blue-green",
+        "    name: repository-secrets",
+        "HAS_SERVER_SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY != '' }}",
+        "validate-consumer.yml@",
+        "engine_ref:",
+    } {
+        if !strings.Contains(workflow,expected){t.Errorf("generated workflow lacks %q",expected)}
+    }
+    if strings.Contains(workflow,"@main"){t.Fatal("workflow must pin a revision")}
+    env:=find(files,".github/blue-green.env")
+    for _,expected:=range []string{"PROJECT_NAME=bluegreen-ci","DEPLOY_NETWORK=bluegreen-ci-edge","APPLICATION_IMAGE=ghcr.io/example/bluegreen-ci:validation","APPLICATION_PORT=8080"}{
+        if !strings.Contains(env,expected){t.Errorf("missing CI-only config %s",expected)}
+    }
+    if strings.Contains(env,"SECRET_KEY="){t.Fatal("CI environment must not include credential values")}
+    root:=t.TempDir()
+    if err:=Write(root,files);err!=nil{t.Fatal(err)}
+    if err:=Write(root,files);err!=nil{t.Fatal(err)}
+    if err:=os.WriteFile(filepath.Join(root,".github","workflows","blue-green.yml"),[]byte("changed"),0644);err!=nil{t.Fatal(err)}
+    if err:=Write(root,files);err==nil{t.Fatal("generated workflow unexpectedly overwritten")}
+}
+
+func TestOCIReusableWorkflowAllowsPackagePublication(t *testing.T){
+    content,err:=os.ReadFile(filepath.Join("..","..",".github","workflows","publish-images.yml"))
+    if err!=nil{t.Fatal(err)}
+    if !strings.Contains(string(content),"  publish:\n    needs: discover\n    permissions:\n      contents: read\n      packages: write\n"){
+        t.Fatal("reusable publisher must request packages: write for GITHUB_TOKEN")
+    }
+}
+
+func TestGeneratedRepositorySecretCheckDoesNotReceiveValues(t *testing.T) {
+    files,err:=Generate(Options{})
+    if err!=nil{t.Fatal(err)}
+    workflow:=find(files,".github/workflows/blue-green.yml")
+    for _,name:=range []string{"SERVER_SSH_PRIVATE_KEY","OCI_REGISTRY_PULL_USERNAME","OCI_REGISTRY_PULL_TOKEN"}{
+        check:="secrets."+name+" != ''"
+        if !strings.Contains(workflow,check){t.Fatalf("required secret presence expression absent: %s",name)}
+        if strings.Contains(workflow,"${{ secrets."+name+" }}"){t.Fatalf("secret value passed to runner: %s",name)}
+    }
+    if !strings.Contains(workflow,"needs: [validate, repository-secrets]")||
+        !strings.Contains(workflow,"REPOSITORY_SECRETS_RESULT"){
+        t.Fatal("secret validation does not affect the mandatory check")
+    }
+    release:=find(files,".github/workflows/release.yml")
+    if !strings.Contains(release,"uses: ./.github/workflows/blue-green.yml")||
+        !strings.Contains(release,"needs: validate") {
+        t.Fatal("releases do not reuse the mandatory repository-secret gate")
+    }
 }

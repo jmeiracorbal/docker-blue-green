@@ -1,6 +1,7 @@
 package deploycli
 
 import (
+    "encoding/base64"
     "bufio"
     "bytes"
     "os"
@@ -102,5 +103,43 @@ func TestChooseKVPathAndField(t *testing.T) {
     }
     if _,err:=chooseKVName(bufio.NewReader(strings.NewReader("1\n")),&bytes.Buffer{},"KV secret",nil);err==nil{
         t.Fatal("accepted missing KV keys")
+    }
+}
+
+func TestSecretPlanIsNonMutatingAndNeedsNoOpenBaoConnection(t *testing.T){
+    root:=t.TempDir()
+    prepareProject(t,root,"api")
+    cfg:=config.Document{Version:1,Project:"myapp",
+        OpenBao:&config.OpenBao{Mount:"kv",Secrets:[]openbao.Reference{{
+            Service:"api",Name:"database_password",Path:"database",Field:"password",
+        }}},
+    }
+    if err:=config.Save(root,cfg);err!=nil{t.Fatal(err)}
+    if err:=config.SaveIngress(root,[]config.Route{{Host:"api.example.com",Service:"api",Port:80}});err!=nil{t.Fatal(err)}
+    var out bytes.Buffer
+    if err:=checkSecrets([]string{"plan","--dir",root},&out);err!=nil{t.Fatal(err)}
+    got:=out.String()
+    for _,expect:=range []string{`"project": "myapp"`,`"openbao_mount": "kv"`,`"path": "database"`,`"field": "password"`}{
+        if !strings.Contains(got,expect){t.Fatalf("missing requirement %s: %s",expect,got)}
+    }
+    if strings.Contains(got,"secret_id") || strings.Contains(got,"/run/secrets"){t.Fatal("secret plan leaks implementation credentials")}
+    after,err:=config.Load(root)
+    if err!=nil||after.OpenBao==nil||len(after.OpenBao.Secrets)!=1{t.Fatal(err)}
+}
+
+func TestSecretPlanRequiresRepositoryCredentialsWhenDeploymentEnabled(t *testing.T){
+    root:=t.TempDir()
+    prepareProject(t,root,"api")
+    key:=base64.StdEncoding.EncodeToString([]byte(strings.Repeat("x",32)))
+    cfg:=config.Document{Version:1,Project:"myapp",Deployment:&config.Deployment{
+        Enabled:true,Host:"example.com",User:"deploy",Port:22,
+        KnownHosts:"example.com ssh-ed25519 "+key,
+    }}
+    if err:=config.Save(root,cfg);err!=nil{t.Fatal(err)}
+    if err:=config.SaveIngress(root,[]config.Route{{Host:"api.example.com",Service:"api",Port:80}});err!=nil{t.Fatal(err)}
+    var out bytes.Buffer
+    if err:=checkSecrets([]string{"plan","--dir",root},&out);err!=nil{t.Fatal(err)}
+    for _,name:=range []string{"SERVER_SSH_PRIVATE_KEY","OCI_REGISTRY_PULL_USERNAME","OCI_REGISTRY_PULL_TOKEN"}{
+        if !strings.Contains(out.String(),name){t.Errorf("missing required GitHub secret %s",name)}
     }
 }

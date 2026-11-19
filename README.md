@@ -9,7 +9,7 @@ A reusable, framework-independent foundation for Blue-Green deployments using Do
 - Prepare isolated Blue/Green application project names and a shared Docker network.
 - Preserve service configuration, named volumes and relative paths where safe.
 - Generate `.env.example` with empty values, and avoid overwriting customized deployment files.
-- Install a release workflow that builds and publishes versioned OCI images through a reusable, pinned workflow.
+- Install the release workflow and a mandatory Blue-Green validation workflow, both pinned to immutable engine commits.
 
 Blue-Green deployment and rollback are available through the CLI. Production integration requires a configured Docker host, route definitions, registry access and compatible application healthchecks.
 
@@ -52,6 +52,8 @@ deploy/
 └── infrastructure/
     └── compose.yml  # only when stateful services are present
 .github/workflows/release.yml
+.github/workflows/blue-green.yml
+.github/blue-green.env
 .env.example
 ```
 
@@ -342,3 +344,35 @@ BLUEGREEN_REAL_OPENBAO=1 go test -v -timeout 10m ./internal/deploy -run '^TestRe
 The test starts an ephemeral OpenBao **development-mode** server, provisions a KV v2 mount and a project-scoped AppRole, starts an authenticated Unix-socket proxy, and exercises the public CLI to list KV paths, discover field names, select and check a secret. It deploys the example application through Docker Compose and Caddy, verifies the mounted secret inside the Blue container, updates the KV value, reconciles the Green container, and verifies rollback restores the previous secret version. A forbidden cross-project KV read is also tested. The test removes its containers and temporary files.
 
 **Testing scope:** OpenBao's development mode is insecure and must never be used in production. The integration test launches the proxy directly rather than installing the production systemd unit; `bluegreen secrets setup`, production TLS trust, and deployment against a separately provisioned OpenBao server require host-specific validation.
+
+## Required Blue-Green validation
+
+`bluegreen init` generates `.github/workflows/blue-green.yml`. This workflow
+runs on pull requests, pushes to main/master, and merge groups. It invokes a
+revision-pinned, reusable validator and finishes with a dedicated job named
+`blue-green`, which fails when the upstream validation fails or is skipped.
+
+The reusable validation covers repository structure, the declared OpenBao and
+GitHub secret **requirements** (via `bluegreen secrets plan`, without values
+or access to secret stores), the public route/export contract, and the
+Docker Compose manifests using `.github/blue-green.env`. The generated CI
+environment contains only artificial, non-secret placeholders. CI does not
+seed or read real OpenBao values.
+
+To make the check truly **blocking for merges**, the repository owner must
+make the exact `blue-green` job a required status check on the protected
+branch or ruleset. Merely creating a GitHub Actions workflow cannot change
+repository branch protection. Do not add path filters to the workflow.
+
+The deployment secret readiness check is a separate trusted-server operation
+(`bluegreen secrets check`) after OpenBao provisioning. It is not executed on
+untrusted pull request code; secret values must never be copied into a PR,
+CI fixtures, logs, or generated files.
+
+### Checking configured GitHub repository secrets
+
+The generated `repository-secrets` job runs in GitHub Actions, not on the Docker deployment host. GitHub evaluates only the presence of `SERVER_SSH_PRIVATE_KEY`, `OCI_REGISTRY_PULL_USERNAME`, and `OCI_REGISTRY_PULL_TOKEN` and passes three Boolean results to the runner. **Secret values never enter the validation process.**
+
+When the project contract enables remote deployment, all three repository secrets are required. `bluegreen secrets plan` determines the requirement from the same declarative contract; disabled remote deployments do not require these credentials. A missing required secret fails `repository-secrets`, which in turn fails the final `blue-green` check. The generated release workflow calls the same local reusable workflow before publishing, so releases are blocked by missing credentials as well. Forked PRs cannot access repository secrets; when remote deployment requires them, these checks intentionally fail closed.
+
+`GITHUB_TOKEN` is provisioned automatically by GitHub, not manually configured as a repository secret. OpenBao is independent: pull requests validate OpenBao references while the trusted deployment host verifies actual secret availability with `bluegreen secrets check`. Branch protection or a ruleset must still mark the `blue-green` status check as required; GitHub Actions cannot set branch rules.
