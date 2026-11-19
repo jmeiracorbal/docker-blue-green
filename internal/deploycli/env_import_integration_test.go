@@ -56,7 +56,7 @@ func TestRealOpenBaoDotenvImport(t *testing.T) {
 		"--name", container, "--network", "host",
 		"-e", "BAO_DEV_ROOT_TOKEN_ID="+token,
 		"ghcr.io/openbao/openbao:2.7.1", "server",
-		"-dev", "-dev-tls", "-dev-no-store-token",
+		"-dev-tls", "-dev-no-store-token",
 		"-dev-tls-cert-dir=/tmp/bluegreen-tls",
 		"-dev-listen-address=127.0.0.1:"+fmt.Sprint(port))
 	t.Cleanup(func() {
