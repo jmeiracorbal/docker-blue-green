@@ -22,10 +22,9 @@ jobs:
       - name: Run real OpenBao, AppRole, Proxy and Docker Blue-Green integration
         env:
           BLUEGREEN_REAL_OPENBAO: "1"
-        run: go test -v -timeout 10m ./internal/deploy -run '^TestRealOpenBaoBlueGreen
+        run: go test -v -timeout 10m ./internal/deploy -run '^TestRealOpenBaoBlueGreen$'
 
       - name: Verify real HTTPS dotenv import, scoped writer and CAS
         env:
           BLUEGREEN_REAL_OPENBAO: "1"
-        run: go test -v -timeout 6m ./internal/deploycli -run '^TestRealOpenBaoDotenvImport
-
+        run: go test -v -timeout 6m ./internal/deploycli -run '^TestRealOpenBaoDotenvImport$'
