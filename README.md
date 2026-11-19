@@ -2,7 +2,7 @@
 
 [![Test CLI](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-cli.yml/badge.svg?branch=main)](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-cli.yml) [![Deployment engine](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-engine.yml/badge.svg?branch=main)](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-engine.yml) [![Compose validation](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/validate.yml) [![OpenBao integration](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-openbao.yml/badge.svg?branch=main)](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-openbao.yml)
 
-**Documentation:** [Deployment lifecycle (English)](docs/README.md) · [Ciclo de despliegue (Español)](docs/README.es.md) · [Shared Edge](edge/README.md)
+**Documentation:** [Deployment lifecycle (English)](docs/README.md) · [Deployment lifecycle (Spanish)](docs/README.es.md) · [Shared Edge](edge/README.md)
 
 A reusable, framework-independent foundation for Blue-Green deployments using Docker Compose and Caddy.
 
@@ -354,7 +354,7 @@ The test starts an ephemeral OpenBao **development-mode** server, provisions a K
 
 ## Required Blue-Green validation
 
-See the complete [integration and deployment lifecycle](docs/README.md) ([en español](docs/README.es.md)) for the required GitHub ruleset, repository-secret checks, image publication and server transition.
+See the complete [integration and deployment lifecycle](docs/README.md) ([Spanish version](docs/README.es.md)) for the required GitHub ruleset, repository-secret checks, image publication and server transition.
 
 `bluegreen init` generates `.github/workflows/blue-green.yml`. This workflow
 runs on pull requests, pushes to main/master, and merge groups. It invokes a
