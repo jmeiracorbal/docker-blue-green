@@ -52,17 +52,17 @@ func TestRealOpenBaoDotenvImport(t *testing.T) {
 		return value
 	}
 	must(nil, "docker", "pull", "ghcr.io/openbao/openbao:2.7.1")
-	must(nil, "docker", "run", "--detach", "--rm",
+	must(nil, "docker", "run", "--detach",
 		"--name", container, "--network", "host",
 		"-e", "BAO_DEV_ROOT_TOKEN_ID="+token,
 		"ghcr.io/openbao/openbao:2.7.1", "server",
 		"-dev-tls", "-dev-no-store-token",
-		"-dev-tls-cert-dir=/tmp/bluegreen-tls",
+		"-dev-tls-cert-dir=/tmp",
 		"-dev-listen-address=127.0.0.1:"+fmt.Sprint(port))
 	t.Cleanup(func() {
 		stop, done := context.WithTimeout(context.Background(), 20*time.Second)
 		defer done()
-		_, _ = exec.CommandContext(stop, "docker", "stop", container).CombinedOutput()
+		_, _ = exec.CommandContext(stop, "docker", "rm", "-f", container).CombinedOutput()
 	})
 	bao := filepath.Join(root, "bao")
 	must(nil, "docker", "cp", container+":/usr/bin/bao", bao)
@@ -70,7 +70,7 @@ func TestRealOpenBaoDotenvImport(t *testing.T) {
 	var caPath, lastTLSStatus, lastCopyError string
 	ready := false
 	for i := 0; i < 60; i++ {
-		if _, copyErr := run(nil, "docker", "cp", container+":/tmp/bluegreen-tls/.", certDir); copyErr != nil {
+		if _, copyErr := run(nil, "docker", "cp", container+":/tmp/.", certDir); copyErr != nil {
 			lastCopyError = copyErr.Error()
 		}
 		caPath = findGeneratedOpenBaoCA(certDir)
