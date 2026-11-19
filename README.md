@@ -1,6 +1,14 @@
 # Docker blue-green
 
+[![Test CLI](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-cli.yml/badge.svg?branch=main)](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-cli.yml) [![Deployment engine](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-engine.yml/badge.svg?branch=main)](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-engine.yml) [![Compose validation](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/validate.yml) [![OpenBao integration](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-openbao.yml/badge.svg?branch=main)](https://github.com/jmeiracorbal/docker-blue-green/actions/workflows/test-openbao.yml)
+
+**Documentation:** [Deployment lifecycle (English)](docs/README.md) · [Ciclo de despliegue (Español)](docs/README.es.md) · [Shared Edge](edge/README.md)
+
 A reusable, framework-independent foundation for Blue-Green deployments using Docker Compose and Caddy.
+
+## Documentation
+
+The complete path from an existing Compose project to a guarded pull request, OCI release, optional SSH deployment, shared Edge routing and rollback is documented in [English](docs/README.md) and [Spanish](docs/README.es.md). Both guides distinguish checks that run in GitHub Actions from production-host operations.
 
 ## Features
 
@@ -143,13 +151,13 @@ publish ports on the host or create per-application Caddy instances.
 
 A published GitHub Release builds every application service with a `build` definition in `deploy/compose.yml`. The images are pushed to the configured OCI registry with the release tag. Each resulting image digest is uploaded as a workflow artifact for later deployment.
 
-Set the OCI destination and publishing username through `bluegreen configure`. The values are stored only in `deploy/bluegreen.yml`, shared with the deployment workflow. The registry password or token is the standardized `OCI_REGISTRY_TOKEN` GitHub Actions secret.
+Set the OCI destination and publishing username through `bluegreen configure`. The values are stored only in `deploy/bluegreen.yml`, shared with the deployment workflow. For GHCR publication, the generated release workflow passes GitHub's automatically provided `GITHUB_TOKEN` to the reusable OCI publisher. The consumer does not create an `OCI_REGISTRY_TOKEN` repository secret.
 
 For a Compose service named `backend` and a release tagged `v1.2.0`, `registry.host: ghcr.io` and `registry.repository: company/myapp` publish `ghcr.io/company/myapp-backend:v1.2.0`. Immutable image digests are recorded for deployment.
 
 `ghcr.io` is an example, not a default; the CLI requires an explicitly configured OCI destination.
 
-The generated workflow calls the shared publisher at a fixed commit for reproducibility. Publishing does not require deployment credentials. Once remote deployment is enabled and configured, the release workflow can deploy the published image digests.
+The generated workflow calls the shared publisher at a fixed commit for reproducibility. The generated release workflow runs the full `blue-green` validation gate before publishing. With remote deployment enabled, this gate also requires the three GitHub repository secrets listed below, even if only publishing is intended. When deployment is disabled, those credentials are not required.
 
 ## Deploying
 
@@ -168,12 +176,11 @@ The same GitHub Actions secret names are used in every consuming repository:
 
 | Secret | Purpose |
 | --- | --- |
-| `OCI_REGISTRY_TOKEN` | Token with permission to publish the release images. |
-| `SERVER_SSH_PRIVATE_KEY` | SSH private key, required only when remote deployment is enabled. |
-| `OCI_REGISTRY_PULL_USERNAME` | Optional registry reader identity for private images. |
-| `OCI_REGISTRY_PULL_TOKEN` | Optional read-only registry token for private images. |
+| `SERVER_SSH_PRIVATE_KEY` | SSH private key, required by the generated gate when remote deployment is enabled. |
+| `OCI_REGISTRY_PULL_USERNAME` | Registry reader identity, required by the generated gate when remote deployment is enabled. |
+| `OCI_REGISTRY_PULL_TOKEN` | Registry read token, required by the generated gate when remote deployment is enabled. |
 
-Private images require **both** pull credentials. For public images they can remain unset. The publishing token is never forwarded to the server. There are no repository-specific GitHub Actions variables for the OCI destination, project name or deployment host.
+The generated gate currently requires all three when remote deployment is enabled, including for public images. The low-level transport can authenticate only when credentials are supplied, but CI intentionally enforces the current project contract. GitHub supplies `GITHUB_TOKEN` for publishing; that token is never forwarded to the server. There are no repository-specific GitHub Actions variables for the OCI destination, project name or deployment host.
 
 The deployment server retains its own non-secret Compose `.env` file in the deployment working directory. GitHub Actions neither uploads nor overwrites it; `DEPLOY_ENV` is no longer a GitHub secret. Set network, Caddy and port variables in that server-side file. Application credentials belong in OpenBao.
 
@@ -346,6 +353,8 @@ The test starts an ephemeral OpenBao **development-mode** server, provisions a K
 **Testing scope:** OpenBao's development mode is insecure and must never be used in production. The integration test launches the proxy directly rather than installing the production systemd unit; `bluegreen secrets setup`, production TLS trust, and deployment against a separately provisioned OpenBao server require host-specific validation.
 
 ## Required Blue-Green validation
+
+See the complete [integration and deployment lifecycle](docs/README.md) ([en español](docs/README.es.md)) for the required GitHub ruleset, repository-secret checks, image publication and server transition.
 
 `bluegreen init` generates `.github/workflows/blue-green.yml`. This workflow
 runs on pull requests, pushes to main/master, and merge groups. It invokes a
