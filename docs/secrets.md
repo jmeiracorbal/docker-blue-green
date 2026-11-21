@@ -9,7 +9,7 @@ The implemented secrets lifecycle has **two independent concerns**: GitHub Actio
 | Activity | Developer | GitHub Actions | Server / OpenBao administrator |
 | --- | --- | --- | --- |
 | Integrate the application | `bluegreen init`, `bluegreen configure` | Validates generated contract | Prepares Docker host independently |
-| Add application credentials | Declares `bluegreen secrets add` references | Validates references without values | Creates KV values and scoped AppRole |
+| Add application credentials | Uses `bluegreen secrets import` or declares `secrets add` references | Validates references without values | Creates scoped identities and policies; may provision KV manually |
 | Configure OpenBao | No host credentials required | Never configures the proxy | Runs `sudo bluegreen secrets setup` |
 | Check readiness | `bluegreen secrets plan` | Checks configured GitHub repository secret presence | Runs `bluegreen secrets check` against the project proxy |
 | Consume credentials | Reads `/run/secrets/<name>` in the application | Never receives OpenBao values | Engine resolves values and mounts read-only files |
@@ -79,9 +79,26 @@ bluegreen secrets plan
 
 The pull-request workflow verifies the service target and reference structure. It **does not** access the real OpenBao value or prove that the provider accepts it.
 
-### Migrating existing .env variables: manual provisioning
+### Importing an explicitly selected .env file
 
-**The current CLI does not import or sync an existing `.env` file into OpenBao.** `bluegreen secrets add` creates a reference, not a KV value. `bluegreen secrets plan` reports requirements only; `bluegreen secrets setup` installs the project proxy, not the secrets themselves.
+The developer can import an existing dotenv file **from the local workstation** and register all its references in a single operation:
+
+```bash
+bluegreen secrets import --env-file .env --service api --mount kv
+```
+
+`--dir` selects the project root (default `.`). The command reads only the indicated regular file, validates every assignment, prints the field **names** and destination, then requires an explicit `yes` confirmation before connecting to OpenBao. All entries are imported; prepare a separate, limited dotenv file when only some variables belong in OpenBao. The original file is not modified.
+
+The developer needs an **HTTPS** OpenBao endpoint (`BAO_ADDR`) and a locally authenticated **write-scoped** session. The importer accepts the standard `BAO_TOKEN`, `BAO_TOKEN_PATH` or default `~/.vault-token` login session, plus `BAO_CACERT` for a private CA. Never place a token in CLI flags or the repository. The developer identity needs `read`, `create` and, for authorized updates, `update` capabilities on the project's KV v2 data path; the server-side AppRole retains **read-only** permissions.
+
+For project `myapi` and service `api`, all fields are stored in the **single** KV v2 object `kv/data/projects/myapi/env/api`. The `DATABASE_PASSWORD` field is referenced as `service: api`, `name: database_password`, `path: env/api`, `field: DATABASE_PASSWORD`, producing the container file `/run/secrets/database_password`. All names are normalized and checked for collisions before any write. Existing unrelated KV fields are preserved.
+
+Identical repeated imports create **no new KV version**. Changes to existing fields fail unless the developer explicitly adds `--update`; every write uses KV v2 CAS to reject concurrent modifications. If KV succeeds but the local YAML cannot be saved, the command reports the partial failure; repeating the same import reconciles the references without another KV version. The import does **not** install OpenBao, populate CI secrets, create environment variables inside containers, or read `.env` automatically during `init`.
+
+### Manual provisioning of existing .env variables
+
+Manual provisioning remains supported when local import is not appropriate. `bluegreen secrets add` creates a reference, not a KV value; `bluegreen secrets plan` reports requirements only, and `bluegreen secrets setup` installs the deployment proxy.
+
 
 Given an existing application's `.env`:
 
@@ -92,7 +109,7 @@ DATABASE_PASSWORD=[redacted]
 JWT_SECRET=[redacted]
 ```
 
-The current migration is explicit:
+Manual migration proceeds as follows:
 
 1. **Developer:** identify which values are sensitive. Non-sensitive settings needed for Compose interpolation stay in the server-local `.env`.
 2. **OpenBao administrator:** manually provision the *real* values in an authorized OpenBao KV v2 interface, CLI or API: `projects/myapi/database` with field `password` and `projects/myapi/authentication` with field `jwt_secret`. The administrator needs OpenBao permissions; `docker-blue-green` does not populate these entries.
@@ -111,7 +128,7 @@ The current migration is explicit:
 
 After verifying a successful deployment using the mounted files, remove plaintext secrets from deployed `.env` files and other copies through a controlled credential-management procedure. Do not remove them before the application has been adapted and verified. The server-local `.env` is still used for non-secret Compose settings.
 
-There is currently **no `bluegreen secrets import` command**, no automatic one-by-one creation of OpenBao KV entries from `.env`, and no automatic environment-variable injection.
+Neither `secrets add` nor `secrets import` injects environment variables into containers. Importing is an explicit opt-in operation.
 
 ### Optional interactive discovery on the host
 
