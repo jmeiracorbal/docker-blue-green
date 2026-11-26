@@ -15,6 +15,11 @@ on:
         description: Immutable Git revision of the Blue-Green CLI
         required: true
         type: string
+      runner_labels_json:
+        description: JSON array of GitHub Actions runner labels for every job
+        required: false
+        type: string
+        default: '["ubuntu-latest"]'
     secrets:
       SERVER_SSH_PRIVATE_KEY:
         required: false
@@ -32,7 +37,7 @@ concurrency:
 
 jobs:
   plan:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_labels_json) }}
     outputs:
       enabled: ${{ steps.contract.outputs.enabled }}
       project: ${{ steps.contract.outputs.project }}
@@ -74,7 +79,7 @@ jobs:
   deploy:
     needs: plan
     if: ${{ needs.plan.outputs.enabled == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_labels_json) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -136,11 +141,11 @@ jobs:
           set -euo pipefail
           test -n "$SSH_PRIVATE_KEY"
           test -n "$SSH_KNOWN_HOSTS"
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/bluegreen"
-          chmod 600 "$HOME/.ssh/bluegreen"
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/known_hosts"
+          install -d -m 700 "$RUNNER_TEMP/bluegreen-ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/bluegreen-ssh/key"
+          chmod 600 "$RUNNER_TEMP/bluegreen-ssh/key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/bluegreen-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/bluegreen-ssh/known_hosts"
 
       - name: Transfer and run deployment
         env:
@@ -163,23 +168,23 @@ jobs:
           ' .bluegreen-dist/release.json)
           [[ "$registry_host" =~ ^[a-z0-9][a-z0-9.:-]*$ && ( "$registry_host" == *.* || "$registry_host" == *:* || "$registry_host" == "localhost" ) ]] || { echo "Invalid OCI registry host in release manifest" >&2; exit 1; }
           remote_dir=".local/share/docker-blue-green/$DEPLOY_PROJECT"
-          ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
+          ssh -i "$RUNNER_TEMP/bluegreen-ssh/key" -o UserKnownHostsFile="$RUNNER_TEMP/bluegreen-ssh/known_hosts" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" "install -d -m 700 '$remote_dir/.incoming'"
-          scp -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -P "$SSH_PORT" \
+          scp -i "$RUNNER_TEMP/bluegreen-ssh/key" -o UserKnownHostsFile="$RUNNER_TEMP/bluegreen-ssh/known_hosts" -o StrictHostKeyChecking=yes -P "$SSH_PORT" \
             .bluegreen-dist/deploy.tgz .bluegreen-dist/bluegreen \
             .bluegreen-dist/release.json \
             "$SSH_USER@$SSH_HOST:$remote_dir/.incoming/"
           if [[ -n "$OCI_REGISTRY_PULL_TOKEN" ]]; then
             printf '%s' "$OCI_REGISTRY_PULL_TOKEN" | \
-              ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
+              ssh -i "$RUNNER_TEMP/bluegreen-ssh/key" -o UserKnownHostsFile="$RUNNER_TEMP/bluegreen-ssh/known_hosts" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
                 "$SSH_USER@$SSH_HOST" \
                 "cd '$remote_dir' && install -d -m 700 .registry && DOCKER_CONFIG=\$PWD/.registry docker login '$registry_host' --username '$OCI_REGISTRY_PULL_USERNAME' --password-stdin"
           fi
-          ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
+          ssh -i "$RUNNER_TEMP/bluegreen-ssh/key" -o UserKnownHostsFile="$RUNNER_TEMP/bluegreen-ssh/known_hosts" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \
             "cd '$remote_dir' && umask 077 && tar -xzf .incoming/deploy.tgz && install -m 700 .incoming/bluegreen ./bluegreen && test -f .env && install -m 600 .incoming/release.json ./release.json && DOCKER_CONFIG=\$PWD/.registry ./bluegreen deploy --dir . --release release.json --env-file .env"
 
-      - name: Remove temporary remote credentials
+      - name: Remove temporary SSH and remote registry credentials
         if: always()
         env:
           SSH_HOST: ${{ needs.plan.outputs.host }}
@@ -188,8 +193,15 @@ jobs:
           DEPLOY_PROJECT: ${{ needs.plan.outputs.project }}
         shell: bash
         run: |
-          if [[ -f "$HOME/.ssh/bluegreen" ]]; then
-            ssh -i "$HOME/.ssh/bluegreen" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
+          set -euo pipefail
+          cleanup_status=0
+          if [[ -f "$RUNNER_TEMP/bluegreen-ssh/key" ]]; then
+            ssh -i "$RUNNER_TEMP/bluegreen-ssh/key" -o UserKnownHostsFile="$RUNNER_TEMP/bluegreen-ssh/known_hosts" -o StrictHostKeyChecking=yes -p "$SSH_PORT" \
               "$SSH_USER@$SSH_HOST" \
-              "cd '.local/share/docker-blue-green/$DEPLOY_PROJECT' && rm -f .incoming/deploy.tgz .incoming/bluegreen .incoming/release.json && rm -rf .registry" || true
+              "cd '.local/share/docker-blue-green/$DEPLOY_PROJECT' && rm -f .incoming/deploy.tgz .incoming/bluegreen .incoming/release.json && rm -rf .registry" || cleanup_status=$?
           fi
+          if [[ -d "$RUNNER_TEMP/bluegreen-ssh" ]]; then
+            rm -f "$RUNNER_TEMP/bluegreen-ssh/key" "$RUNNER_TEMP/bluegreen-ssh/known_hosts"
+            rmdir "$RUNNER_TEMP/bluegreen-ssh"
+          fi
+          exit "$cleanup_status"

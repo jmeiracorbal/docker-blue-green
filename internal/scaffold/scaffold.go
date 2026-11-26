@@ -27,6 +27,7 @@ type Options struct {
 	AppServices, InfrastructureServices []string
 	Input                               io.Reader
 	Output                              io.Writer
+    CI                                  *config.CI
 }
 
 var envPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z_0-9]*)\}`)
@@ -75,12 +76,18 @@ func Generate(o Options) ([]File, error) {
 	if o.Output == nil {
 		o.Output = io.Discard
 	}
+    initial,err:=config.InitialWithCI(o.CI)
+    if err!=nil{return nil,err}
+    workflowFiles,err:=generatedWorkflows(o.CI)
+    if err!=nil{return nil,err}
 	if len(o.ComposeJSON) == 0 {
 		if len(o.AppServices) > 0 || len(o.InfrastructureServices) > 0 {
 			return nil, errors.New("service classifications require an existing Compose source")
 		}
-		files:=emptyScaffold()
-        return append(files,publishWorkflowFile(),validationWorkflowFile(),validationEnvironmentFile(files[2].Data)),nil
+        files:=emptyScaffold()
+        files[0].Data=initial
+        files=append(files,workflowFiles...)
+        return append(files,validationEnvironmentFile(files[2].Data)),nil
 	}
 	for _, match := range interpolationPattern.FindAllSubmatch(o.ComposeJSON, -1) {
 		if !variableNamePattern.Match(match[1]) {
@@ -146,7 +153,7 @@ func Generate(o Options) ([]File, error) {
 	infraData := marshalYAML(infra)
 
     files:=[]File{
-        {Path:"deploy/bluegreen.yml",Data:config.Initial()},
+        {Path:"deploy/bluegreen.yml",Data:initial},
         {Path:"deploy/compose.yml",Data:appData},
     }
     if len(infraServices)>0 {
@@ -166,7 +173,8 @@ func Generate(o Options) ([]File, error) {
 		fmt.Fprintf(&env, "%s=\n", name)
 	}
 	files = append(files, File{Path: ".env.example", Data: env.Bytes()})
-	files = append(files,publishWorkflowFile(),validationWorkflowFile(),validationEnvironmentFile(env.Bytes()))
+	files = append(files,workflowFiles...)
+    files = append(files,validationEnvironmentFile(env.Bytes()))
 	return files, nil
 }
 

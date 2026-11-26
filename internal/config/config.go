@@ -26,6 +26,7 @@ type Document struct {
     Project string `yaml:"project"`
     Routes []Route `yaml:"-"`
     Registry *Registry `yaml:"registry,omitempty"`
+    CI *CI `yaml:"ci,omitempty"`
     Deployment *Deployment `yaml:"deployment,omitempty"`
     OpenBao *OpenBao `yaml:"openbao,omitempty"`
     Lifecycle *Lifecycle `yaml:"lifecycle,omitempty"`
@@ -43,6 +44,12 @@ type Registry struct {
     Host string `yaml:"host" json:"host"`
     Repository string `yaml:"repository" json:"repository"`
     Username string `yaml:"username" json:"username"`
+}
+
+// CI declares the GitHub Actions runner labels selected by each consumer.
+// It never contains provider credentials or executable workflow code.
+type CI struct {
+    RunnerLabels []string `yaml:"runner_labels" json:"runner_labels"`
 }
 
 // Deployment is an optional SSH target. KnownHosts contains a verified SSH
@@ -84,6 +91,7 @@ var (
     registryUserPattern = regexp.MustCompile(`^[A-Za-z0-9_.@-]+$`)
     sshHostPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`)
     sshUserPattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]*$`)
+    runnerLabelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$`)
 )
 
 func Path(root string) string {
@@ -92,6 +100,14 @@ func Path(root string) string {
 
 func Initial() []byte {
     return []byte("version: 1\nproject: \"\"\n")
+}
+
+// InitialWithCI initializes the same canonical project contract for CLI init.
+func InitialWithCI(ci *CI) ([]byte, error) {
+    if ci == nil { return Initial(), nil }
+    cfg := Document{Version: 1, CI: ci}
+    if err := cfg.Validate(false); err != nil { return nil, err }
+    return yaml.Marshal(cfg)
 }
 
 func Parse(data []byte) (Document, error) {
@@ -254,6 +270,23 @@ func (cfg Document) Validate(complete bool) error {
             return errors.New("invalid OCI registry username")
         }
     }
+    if cfg.CI != nil {
+        labels:=cfg.CI.RunnerLabels
+        if len(labels)==0 || len(labels)>16 {
+            return errors.New("ci.runner_labels requires between 1 and 16 labels")
+        }
+        seenLabels:=make(map[string]bool,len(labels))
+        for _,label:=range labels {
+            if !runnerLabelPattern.MatchString(label) {
+                return fmt.Errorf("invalid ci.runner_labels entry %q",label)
+            }
+            key:=strings.ToLower(label)
+            if seenLabels[key] {
+                return fmt.Errorf("duplicate ci.runner_labels entry %q",label)
+            }
+            seenLabels[key]=true
+        }
+    }
     if cfg.Deployment != nil {
         dep:=cfg.Deployment
         if !dep.Enabled {
@@ -339,7 +372,8 @@ func (cfg Document) Export() ([]byte, error) {
         Routes []Route `json:"routes"`
         Registry Registry `json:"registry"`
         Deployment Deployment `json:"deployment"`
-    }{Project:cfg.Project, Routes:cfg.Routes,Registry:*cfg.Registry,Deployment:deployment})
+        CI *CI `json:"ci,omitempty"`
+    }{Project:cfg.Project, Routes:cfg.Routes,Registry:*cfg.Registry,Deployment:deployment,CI:cfg.CI})
 }
 
 func (cfg Document) Secrets() (openbao.Manifest, bool) {

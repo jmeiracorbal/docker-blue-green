@@ -17,6 +17,7 @@ func TestProjectConfigRoundTrip(t *testing.T) {
         Project:"myapp",
         Routes:[]Route{{Host:"api.example.com",Service:"api",Port:8000}},
         Registry:&Registry{Host:"ghcr.io",Repository:"team/myapp",Username:"ci-publisher"},
+        CI:&CI{RunnerLabels:[]string{"self-hosted","linux","x64","build"}},
         Deployment:&Deployment{Enabled:true,Host:"example.com",User:"deploy",Port:22,
             KnownHosts:"example.com ssh-ed25519 "+base64.StdEncoding.EncodeToString([]byte("verified-host-key-for-ci"))},
         OpenBao:&OpenBao{Mount:"kv",Secrets:[]openbao.Reference{{
@@ -30,7 +31,7 @@ func TestProjectConfigRoundTrip(t *testing.T) {
     parsed,err:=Load(root)
     if err!=nil{t.Fatal(err)}
     if err:=parsed.Validate(true);err!=nil{t.Fatal(err)}
-    if parsed.Project!="myapp" || parsed.Routes[0].Host!="api.example.com" {
+    if parsed.Project!="myapp" || parsed.Routes[0].Host!="api.example.com" || parsed.CI==nil || len(parsed.CI.RunnerLabels)!=4 || parsed.CI.RunnerLabels[3]!="build" {
         t.Fatalf("incorrect round trip: %+v",parsed)
     }
     manifest,ok:=parsed.Secrets()
@@ -41,7 +42,7 @@ func TestProjectConfigRoundTrip(t *testing.T) {
     if err!=nil{t.Fatal(err)}
     if strings.Contains(string(data),"database") || strings.Contains(string(data),"db_password") ||
         !strings.Contains(string(data),"api.example.com") ||
-        !strings.Contains(string(data),"ghcr.io") || !strings.Contains(string(data),"example.com") {
+        !strings.Contains(string(data),"ghcr.io") || !strings.Contains(string(data),"example.com") || !strings.Contains(string(data),`"runner_labels":["self-hosted","linux","x64","build"]`) {
         t.Fatalf("public workflow export is unsafe: %s",data)
     }
 }
@@ -145,4 +146,34 @@ func TestSharedIngressRequiresInfrastructureService(t *testing.T){
  if err:=os.WriteFile(path,[]byte("services:\n  rustfs:\n    image: rustfs/rustfs:1\n    networks:\n      edge:\n        aliases: [\"${PROJECT_NAME}-infrastructure-rustfs\"]\nnetworks:\n  edge:\n    external: true\n    name: \"${DEPLOY_NETWORK}\"\n"),0644);err!=nil{t.Fatal(err)}
  if err:=cfg.ValidateApplicationServices(root);err!=nil{t.Fatal(err)}
  if err:=cfg.Validate(true);err!=nil{t.Fatal(err)}
+}
+
+func TestCIRunnerLabelsValidation(t *testing.T) {
+    for _,labels:=range [][]string{
+        {"ubuntu-latest"},
+        {"self-hosted","Linux","X64","build-01"},
+        {"ubuntu-24.04"},
+    } {
+        cfg:=Document{Version:1,Project:"demo",CI:&CI{RunnerLabels:labels}}
+        if err:=cfg.Validate(false);err!=nil{t.Fatalf("valid labels %q: %v",labels,err)}
+    }
+    for _,labels:=range [][]string{
+        nil,{}, {""}, {"self-hosted",""}, {"ubuntu latest"},
+        {"ubuntu-latest","UBUNTU-LATEST"}, {"../path"}, {"weird,comma"},
+        {"${{ secrets.TOKEN }}"}, {"label\nvalue"},
+    } {
+        cfg:=Document{Version:1,Project:"demo",CI:&CI{RunnerLabels:labels}}
+        if err:=cfg.Validate(false);err==nil{t.Errorf("accepted unsafe CI labels %q",labels)}
+    }
+    parsed,err:=Parse([]byte("version: 1\nproject: demo\nci:\n  runner_labels: [self-hosted, linux]\n"))
+    if err!=nil{t.Fatal(err)}
+    if parsed.CI==nil || len(parsed.CI.RunnerLabels)!=2 {t.Fatalf("CI not parsed: %+v",parsed.CI)}
+    for _,bad:=range []string{
+        "version: 1\nproject: demo\nci: {}\n",
+        "version: 1\nproject: demo\nci:\n  runner_labels: []\n",
+        "version: 1\nproject: demo\nci:\n  runner_labels: [linux, LINUX]\n",
+        "version: 1\nproject: demo\nci:\n  runner_labels: [linux]\n  owner: other\n",
+    } {
+        if _,err:=Parse([]byte(bad));err==nil{t.Errorf("accepted unsafe CI mapping %q",bad)}
+    }
 }

@@ -80,7 +80,8 @@ bluegreen configure \
   --port 8080 \
   --registry-host ghcr.io \
   --registry-repository company/myapi \
-  --registry-username company
+  --registry-username company \
+  --ci-runner-labels self-hosted,linux,x64,build
 ```
 
 The project identity, registry destination, lifecycle operations, optional SSH deployment target and OpenBao references belong to `deploy/bluegreen.yml`. Public ingress belongs **only** to the Compose extension `x-bluegreen.ingress` in `deploy/compose.yml`:
@@ -118,6 +119,25 @@ To actually prevent merging when checks fail, configure a GitHub branch ruleset 
 ### Optional OpenBao application secrets
 
 OpenBao is not required by the integration or deployment process. When an application needs centrally managed credentials, the developer declares references with `bluegreen secrets add` and the server administrator provisions the actual KV values, project-scoped AppRole and proxy. See the complete [secrets lifecycle](secrets.md) for exact commands, roles, presence checks, read-only container delivery, rotation and rollback. GitHub repository secrets are a separate CI/CD concern.
+
+### CI runner selection in the project contract
+
+Runner labels belong to the single `deploy/bluegreen.yml` configuration, not to a specific application or CI provider:
+
+```yaml
+ci:
+  runner_labels:
+    - self-hosted
+    - linux
+    - x64
+    - build
+```
+
+For automation, `bluegreen configure --ci-runner-labels self-hosted,linux,x64,build` persists the same setting. `bluegreen config check` rejects empty, malformed and duplicate labels; `bluegreen config export` exposes the non-secret CI selection. When `ci` is absent, the currently generated workflows retain their existing runner behavior.
+
+The reusable workflows accept `runner_labels_json` as a JSON array. `bluegreen init --ci-runner-labels ...` generates both the project contract and runner-aware workflows; `bluegreen configure --ci-runner-labels ...` reconciles existing managed `release.yml` and `blue-green.yml` automatically. It selects all five jobs, including local repository-secret and status-gate jobs, and moves their engine pins to an immutable CI-capable revision when needed. Custom jobs and unrelated fields are preserved; an unrelated or modified managed workflow fails explicitly rather than being overwritten. The existing hosted-runner behavior remains unchanged when `ci` is absent. The update is idempotent.
+
+Only trusted application code should execute on persistent self-hosted runners; the runner must provide Go, Docker Compose, Git, SSH and OCI build tooling.
 
 ## 5. What happens on a pull request?
 

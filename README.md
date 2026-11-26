@@ -18,6 +18,7 @@ The complete path from an existing Compose project to a guarded pull request, OC
 - Preserve service configuration, named volumes and relative paths where safe.
 - Generate `.env.example` with empty values, and avoid overwriting customized deployment files.
 - Install the release workflow and a mandatory Blue-Green validation workflow, both pinned to immutable engine commits.
+- Configure GitHub Actions runners once in `deploy/bluegreen.yml` (`ci.runner_labels`); initialization and configuration keep generated callers in sync without application-specific workflows.
 
 Blue-Green deployment and rollback are available through the CLI. Production integration requires a configured Docker host, route definitions, registry access and compatible application healthchecks.
 

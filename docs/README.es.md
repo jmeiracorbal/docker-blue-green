@@ -80,7 +80,8 @@ bluegreen configure \
   --port 8080 \
   --registry-host ghcr.io \
   --registry-repository empresa/miapi \
-  --registry-username empresa
+  --registry-username empresa \
+  --ci-runner-labels self-hosted,linux,x64,build
 ```
 
 La identidad del proyecto, el registro OCI, los hooks, el destino SSH opcional y las referencias de OpenBao se guardan en `deploy/bluegreen.yml`. Las rutas públicas se declaran **únicamente** en `deploy/compose.yml` mediante `x-bluegreen.ingress`:
@@ -118,6 +119,25 @@ Para bloquear una fusión por un error, el responsable del repositorio debe conf
 ### Secretos de aplicación opcionales mediante OpenBao
 
 OpenBao no es un requisito para integrar ni desplegar el proyecto. Si la aplicación necesita credenciales centralizadas, el desarrollador declara referencias mediante `bluegreen secrets add`; el administrador del servidor provisiona los valores KV reales, el AppRole restringido y el proxy. El [ciclo de vida de los secretos](secrets.es.md) explica los comandos, responsables, comprobaciones, archivos de solo lectura en contenedores, rotación y rollback. Los secrets del repositorio GitHub pertenecen al proceso CI/CD y se gestionan por separado.
+
+### Selección declarativa de runners de CI
+
+Las etiquetas del runner se declaran en el contrato único `deploy/bluegreen.yml`, sin asociarlas a una aplicación ni a un proveedor:
+
+```yaml
+ci:
+  runner_labels:
+    - self-hosted
+    - linux
+    - x64
+    - build
+```
+
+El comando `bluegreen configure --ci-runner-labels self-hosted,linux,x64,build` guarda la misma configuración. `bluegreen config check` rechaza etiquetas vacías, malformadas o duplicadas, y `bluegreen config export` publica la selección no sensible. Si no existe la sección `ci`, los workflows generados mantienen el comportamiento actual.
+
+Los workflows reutilizables aceptan `runner_labels_json` como array JSON. `bluegreen init --ci-runner-labels ...` genera el contrato y los workflows con el runner configurado; `bluegreen configure --ci-runner-labels ...` actualiza automáticamente `release.yml` y `blue-green.yml` cuando pertenecen al motor. Se seleccionan los cinco jobs, incluidos los de comprobación de secretos y control final, y se actualiza la referencia inmutable del motor cuando es necesario. Se conservan los jobs y campos ajenos; un workflow no gestionado o modificado concurrentemente provoca un error en vez de sobrescribirse. Si no existe `ci`, se conserva el comportamiento actual. La actualización es idempotente.
+
+Los runners propios persistentes solo deben ejecutar código de confianza y disponer de Go, Docker Compose, Git, SSH y herramientas para construir imágenes OCI.
 
 ## 5. Qué ocurre al abrir una pull request
 

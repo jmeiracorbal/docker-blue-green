@@ -9,6 +9,8 @@ import (
     "testing"
 
     "github.com/jmeiracorbal/docker-blue-green/internal/config"
+    "github.com/jmeiracorbal/docker-blue-green/internal/scaffold"
+    "gopkg.in/yaml.v3"
 )
 
 func prepareProject(t *testing.T,root string,service string) {
@@ -123,4 +125,84 @@ func TestConfigCheckRequiresRegistry(t *testing.T) {
         t.Fatal(err)
     }
     if err:=Config([]string{"check","--dir",root},&bytes.Buffer{});err!=nil{t.Fatal(err)}
+}
+
+func TestConfigureRunnerLabelsFromProjectContract(t *testing.T) {
+    root:=t.TempDir()
+    prepareProject(t,root,"api")
+    existing:=config.Document{
+        Version:1,Project:"demo",
+        Routes:[]config.Route{{Host:"api.example.com",Service:"api",Port:8000}},
+        Registry:&config.Registry{Host:"ghcr.io",Repository:"team/demo",Username:"publisher"},
+    }
+    if err:=saveConfigured(root,existing);err!=nil{t.Fatal(err)}
+    generated,err:=scaffold.Generate(scaffold.Options{})
+    if err!=nil{t.Fatal(err)}
+    for _,file:=range generated {
+        if file.Path!=".github/workflows/release.yml" && file.Path!=".github/workflows/blue-green.yml" {continue}
+        target:=filepath.Join(root,file.Path)
+        if err:=os.MkdirAll(filepath.Dir(target),0755);err!=nil{t.Fatal(err)}
+        if err:=os.WriteFile(target,file.Data,0644);err!=nil{t.Fatal(err)}
+    }
+    configure:=func(labels string) error {
+        return Configure([]string{"--dir",root,"--ci-runner-labels",labels},
+            strings.NewReader(""),&bytes.Buffer{})
+    }
+    if err:=configure("self-hosted, linux, x64, build-01");err!=nil{t.Fatal(err)}
+    if err:=configure("self-hosted, linux, x64, build-01");err!=nil{t.Fatal(err)}
+    cfg,err:=config.Load(root)
+    if err!=nil{t.Fatal(err)}
+    if cfg.CI==nil || strings.Join(cfg.CI.RunnerLabels,",")!="self-hosted,linux,x64,build-01" {
+        t.Fatalf("runner labels not persisted: %+v",cfg.CI)
+    }
+    if err:=Config([]string{"check","--dir",root},&bytes.Buffer{});err!=nil{t.Fatal(err)}
+    managed,err:=os.ReadFile(filepath.Join(root,".github","workflows","blue-green.yml"))
+    if err!=nil{t.Fatal(err)}
+    var gate struct {
+        Jobs map[string]struct {
+            RunsOn []string `yaml:"runs-on"`
+            With map[string]string `yaml:"with"`
+        } `yaml:"jobs"`
+    }
+    if err:=yaml.Unmarshal(managed,&gate);err!=nil{t.Fatal(err)}
+    labels:=[]string{"self-hosted","linux","x64","build-01"}
+    if got:=gate.Jobs["validate"].With["runner_labels_json"];got!=`["self-hosted","linux","x64","build-01"]` {
+        t.Fatalf("reusable validator ignores CI configuration: %q",got)
+    }
+    for _,name:=range []string{"repository-secrets","blue-green"} {
+        job:=gate.Jobs[name]
+        if strings.Join(job.RunsOn,",")!=strings.Join(labels,",") {
+            t.Fatalf("%s has wrong runner labels: %v",name,job.RunsOn)
+        }
+    }
+    release,err:=os.ReadFile(filepath.Join(root,".github","workflows","release.yml"))
+    if err!=nil{t.Fatal(err)}
+    var publisher struct {
+        Jobs map[string]struct {
+            With map[string]string `yaml:"with"`
+        } `yaml:"jobs"`
+    }
+    if err:=yaml.Unmarshal(release,&publisher);err!=nil{t.Fatal(err)}
+    for _,name:=range []string{"publish","deploy"} {
+        if got:=publisher.Jobs[name].With["runner_labels_json"];got!=`["self-hosted","linux","x64","build-01"]` {
+            t.Fatalf("%s does not use project runner configuration: %q",name,got)
+        }
+    }
+    var exported bytes.Buffer
+    if err:=Config([]string{"export","--dir",root},&exported);err!=nil{t.Fatal(err)}
+    if !strings.Contains(exported.String(),`"runner_labels":["self-hosted","linux","x64","build-01"]`) {
+        t.Fatalf("missing CI in public export: %s",exported.String())
+    }
+    for _,invalid:=range []string{"",",","linux,,x64","linux,LINUX","ubuntu latest", "${{ github.token }}"} {
+        if err:=configure(invalid);err==nil{t.Errorf("accepted invalid runner labels %q",invalid)}
+    }
+    cfg,err=config.Load(root)
+    if err!=nil || cfg.CI==nil || len(cfg.CI.RunnerLabels)!=4 {
+        t.Fatalf("invalid input modified project: %+v, %v",cfg,err)
+    }
+    if err:=configure("ubuntu-latest");err!=nil{t.Fatal(err)}
+    cfg,err=config.Load(root)
+    if err!=nil || cfg.CI==nil || strings.Join(cfg.CI.RunnerLabels,",")!="ubuntu-latest" {
+        t.Fatalf("runner label replacement failed: %+v, %v",cfg,err)
+    }
 }
