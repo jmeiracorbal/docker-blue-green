@@ -80,7 +80,8 @@ bluegreen configure \
   --port 8080 \
   --registry-host ghcr.io \
   --registry-repository company/myapi \
-  --registry-username company
+  --registry-username company \
+  --ci-runner-labels self-hosted,linux,x64,build
 ```
 
 The project identity, registry destination, lifecycle operations, optional SSH deployment target and OpenBao references belong to `deploy/bluegreen.yml`. Public ingress belongs **only** to the Compose extension `x-bluegreen.ingress` in `deploy/compose.yml`:
@@ -134,7 +135,7 @@ ci:
 
 For automation, `bluegreen configure --ci-runner-labels self-hosted,linux,x64,build` persists the same setting. `bluegreen config check` rejects empty, malformed and duplicate labels; `bluegreen config export` exposes the non-secret CI selection. When `ci` is absent, the currently generated workflows retain their existing runner behavior.
 
-The reusable workflows already accept the transport input `runner_labels_json` as a JSON array, with a default of `["ubuntu-latest"]`. **The generated caller workflows do not yet derive that input (or their local `runs-on`) from the project contract.** That generation/update integration is a separate pending stage. Do not assume configuring labels alone changes the runner used by existing generated workflows.
+The reusable workflows accept `runner_labels_json` as a JSON array. `bluegreen init --ci-runner-labels ...` generates both the project contract and runner-aware workflows; `bluegreen configure --ci-runner-labels ...` reconciles existing managed `release.yml` and `blue-green.yml` automatically. It selects all five jobs, including local repository-secret and status-gate jobs, and moves their engine pins to an immutable CI-capable revision when needed. Custom jobs and unrelated fields are preserved; an unrelated or modified managed workflow fails explicitly rather than being overwritten. The existing hosted-runner behavior remains unchanged when `ci` is absent. The update is idempotent.
 
 Only trusted application code should execute on persistent self-hosted runners; the runner must provide Go, Docker Compose, Git, SSH and OCI build tooling.
 
