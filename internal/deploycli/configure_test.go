@@ -10,6 +10,7 @@ import (
 
     "github.com/jmeiracorbal/docker-blue-green/internal/config"
     "github.com/jmeiracorbal/docker-blue-green/internal/scaffold"
+    "gopkg.in/yaml.v3"
 )
 
 func prepareProject(t *testing.T,root string,service string) {
@@ -157,11 +158,35 @@ func TestConfigureRunnerLabelsFromProjectContract(t *testing.T) {
     if err:=Config([]string{"check","--dir",root},&bytes.Buffer{});err!=nil{t.Fatal(err)}
     managed,err:=os.ReadFile(filepath.Join(root,".github","workflows","blue-green.yml"))
     if err!=nil{t.Fatal(err)}
-    if !strings.Contains(string(managed),`runner_labels_json: '["self-hosted","linux","x64","build-01"]'`) &&
-       !strings.Contains(string(managed),`runner_labels_json: '["self-hosted","linux","x64","build-01"]'`) {
-        // GitHub YAML may quote scalars using double quotes; structural tests
-        // cover that representation separately.
-        if !strings.Contains(string(managed),"runner_labels_json:") {t.Fatal("runner input not generated")}
+    var gate struct {
+        Jobs map[string]struct {
+            RunsOn []string `yaml:"runs-on"`
+            With map[string]string `yaml:"with"`
+        } `yaml:"jobs"`
+    }
+    if err:=yaml.Unmarshal(managed,&gate);err!=nil{t.Fatal(err)}
+    labels:=[]string{"self-hosted","linux","x64","build-01"}
+    if got:=gate.Jobs["validate"].With["runner_labels_json"];got!=`["self-hosted","linux","x64","build-01"]` {
+        t.Fatalf("reusable validator ignores CI configuration: %q",got)
+    }
+    for _,name:=range []string{"repository-secrets","blue-green"} {
+        job:=gate.Jobs[name]
+        if strings.Join(job.RunsOn,",")!=strings.Join(labels,",") {
+            t.Fatalf("%s has wrong runner labels: %v",name,job.RunsOn)
+        }
+    }
+    release,err:=os.ReadFile(filepath.Join(root,".github","workflows","release.yml"))
+    if err!=nil{t.Fatal(err)}
+    var publisher struct {
+        Jobs map[string]struct {
+            With map[string]string `yaml:"with"`
+        } `yaml:"jobs"`
+    }
+    if err:=yaml.Unmarshal(release,&publisher);err!=nil{t.Fatal(err)}
+    for _,name:=range []string{"publish","deploy"} {
+        if got:=publisher.Jobs[name].With["runner_labels_json"];got!=`["self-hosted","linux","x64","build-01"]` {
+            t.Fatalf("%s does not use project runner configuration: %q",name,got)
+        }
     }
     var exported bytes.Buffer
     if err:=Config([]string{"export","--dir",root},&exported);err!=nil{t.Fatal(err)}
