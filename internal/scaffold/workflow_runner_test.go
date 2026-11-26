@@ -4,6 +4,7 @@ import (
     "encoding/json"
     "os"
     "path/filepath"
+    "strings"
     "testing"
 
     "gopkg.in/yaml.v3"
@@ -53,5 +54,28 @@ func TestReusableWorkflowsAllowSelectingRunnerLabels(t *testing.T) {
                 }
             }
         })
+    }
+}
+
+// A reusable deployment workflow may run on a persistent self-hosted runner.
+// SSH private keys and known_hosts must remain scoped to the job's temp dir
+// and must be removed after the remote registry cleanup.
+func TestReusableDeploymentSSHCredentialsStayTemporary(t *testing.T) {
+    content, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "deploy-remote.yml"))
+    if err != nil { t.Fatal(err) }
+    workflow := string(content)
+    if strings.Contains(workflow, "$HOME/.ssh") {
+        t.Fatal("workflow writes SSH credentials to the persistent runner home")
+    }
+    for _, fragment := range []string{
+        "$RUNNER_TEMP/bluegreen-ssh/key",
+        "$RUNNER_TEMP/bluegreen-ssh/known_hosts",
+        "UserKnownHostsFile=",
+        "rm -f \"$RUNNER_TEMP/bluegreen-ssh/key\" \"$RUNNER_TEMP/bluegreen-ssh/known_hosts\"",
+        "rmdir \"$RUNNER_TEMP/bluegreen-ssh\"",
+    } {
+        if !strings.Contains(workflow, fragment) {
+            t.Fatalf("temporary SSH credential lifecycle missing %q", fragment)
+        }
     }
 }
