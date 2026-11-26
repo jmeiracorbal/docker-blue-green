@@ -30,8 +30,9 @@ func Configure(args []string, input io.Reader, output io.Writer) error {
     deployPort:=flags.Int("deploy-port",0,"SSH deployment port")
     deployKnownHosts:=flags.String("deploy-known-hosts","","verified OpenSSH known_hosts line")
     deployDisabled:=flags.Bool("deploy-disabled",false,"disable remote deployment")
+    ciRunnerLabels:=flags.String("ci-runner-labels","","comma-separated GitHub Actions runner labels")
     if err:=flags.Parse(args);err!=nil{return err}
-    if flags.NArg()!=0{return errors.New("usage: bluegreen configure [--dir PATH] [--project NAME] [--host HOST --service SERVICE --port PORT] [--registry-host HOST --registry-repository PATH --registry-username USER] [--deploy-host HOST --deploy-user USER --deploy-port PORT --deploy-known-hosts KEY]")}
+    if flags.NArg()!=0{return errors.New("usage: bluegreen configure [--dir PATH] [--project NAME] [--host HOST --service SERVICE --port PORT] [--registry-host HOST --registry-repository PATH --registry-username USER] [--deploy-host HOST --deploy-user USER --deploy-port PORT --deploy-known-hosts KEY] [--ci-runner-labels LABEL1,LABEL2]")}
 
     cfg,err:=config.Load(*dir)
     if err!=nil{return err}
@@ -118,6 +119,15 @@ func Configure(args []string, input io.Reader, output io.Writer) error {
     if *deployDisabled {cfg.Deployment=nil}
     if deploymentProvided {
         cfg.Deployment=&config.Deployment{Enabled:true,Host:*deployHost,User:*deployUser,Port:*deployPort,KnownHosts:*deployKnownHosts}
+    }
+    // Runner selection belongs to the shared contract, never per-project
+    // workflow overrides. An explicitly empty flag must fail validation.
+    runnerLabelsProvided:=false
+    flags.Visit(func(f *flag.Flag){if f.Name=="ci-runner-labels"{runnerLabelsProvided=true}})
+    if runnerLabelsProvided {
+        labels:=strings.Split(*ciRunnerLabels,",")
+        for i,label:=range labels { labels[i]=strings.TrimSpace(label) }
+        cfg.CI=&config.CI{RunnerLabels:labels}
     }
     if err:=cfg.Validate(true);err!=nil{return err}
     if err:=cfg.ValidateApplicationServices(*dir);err!=nil{return err}

@@ -26,6 +26,7 @@ type Document struct {
     Project string `yaml:"project"`
     Routes []Route `yaml:"-"`
     Registry *Registry `yaml:"registry,omitempty"`
+    CI *CI `yaml:"ci,omitempty"`
     Deployment *Deployment `yaml:"deployment,omitempty"`
     OpenBao *OpenBao `yaml:"openbao,omitempty"`
     Lifecycle *Lifecycle `yaml:"lifecycle,omitempty"`
@@ -43,6 +44,12 @@ type Registry struct {
     Host string `yaml:"host" json:"host"`
     Repository string `yaml:"repository" json:"repository"`
     Username string `yaml:"username" json:"username"`
+}
+
+// CI declares project-owned GitHub Actions runner labels. It contains
+// scheduling configuration only; no runner credentials or provider settings.
+type CI struct {
+    RunnerLabels []string `yaml:"runner_labels" json:"runner_labels"`
 }
 
 // Deployment is an optional SSH target. KnownHosts contains a verified SSH
@@ -83,7 +90,192 @@ var (
     registryRepoSegmentPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
     registryUserPattern = regexp.MustCompile(`^[A-Za-z0-9_.@-]+$`)
     sshHostPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`)
-    sshUserPattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]*$`)
+    sshUserPattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]*package config
+
+import (
+    "bytes"
+    "encoding/base64"
+    "encoding/json"
+    "strconv"
+    "errors"
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "regexp"
+    "strings"
+
+    "gopkg.in/yaml.v3"
+
+    "github.com/jmeiracorbal/docker-blue-green/internal/openbao"
+)
+
+// Document is the single source of project-level Blue-Green settings.
+// Docker Compose remains the source of services and container infrastructure;
+// immutable OCI digests and release versions remain release inputs.
+type Document struct {
+    Version int `yaml:"version"`
+    Project string `yaml:"project"`
+    Routes []Route `yaml:"-"`
+    Registry *Registry `yaml:"registry,omitempty"`
+    CI *CI `yaml:"ci,omitempty"`
+    Deployment *Deployment `yaml:"deployment,omitempty"`
+    OpenBao *OpenBao `yaml:"openbao,omitempty"`
+    Lifecycle *Lifecycle `yaml:"lifecycle,omitempty"`
+}
+
+type Route struct {
+    Host string `yaml:"host" json:"host"`
+    Service string `yaml:"service" json:"service"`
+    Port int `yaml:"port" json:"port"`
+    Shared bool `yaml:"shared,omitempty" json:"shared,omitempty"`
+}
+
+// Registry contains only public OCI destination data, never credentials.
+type Registry struct {
+    Host string `yaml:"host" json:"host"`
+    Repository string `yaml:"repository" json:"repository"`
+    Username string `yaml:"username" json:"username"`
+}
+
+// CI declares project-owned GitHub Actions runner labels. It contains
+// scheduling configuration only; no runner credentials or provider settings.
+type CI struct {
+    RunnerLabels []string `yaml:"runner_labels" json:"runner_labels"`
+}
+
+// Deployment is an optional SSH target. KnownHosts contains a verified SSH
+// public host key; authentication keys stay in GitHub Secrets.
+type Deployment struct {
+    Enabled bool `yaml:"enabled" json:"enabled"`
+    Host string `yaml:"host,omitempty" json:"host,omitempty"`
+    User string `yaml:"user,omitempty" json:"user,omitempty"`
+    Port int `yaml:"port,omitempty" json:"port,omitempty"`
+    KnownHosts string `yaml:"known_hosts,omitempty" json:"known_hosts,omitempty"`
+}
+
+// Lifecycle is a sequence of explicit, container-local one-off operations.
+// Blue-Green does not interpret shell scripts or run database migrations itself.
+type Lifecycle struct {
+    BeforeStart []LifecycleStep `yaml:"before_start,omitempty"`
+    BeforeSwitch []LifecycleStep `yaml:"before_switch,omitempty"`
+}
+
+type LifecycleStep struct {
+    Service string `yaml:"service"`
+    Entrypoint string `yaml:"entrypoint"`
+    Args []string `yaml:"args,omitempty"`
+    TimeoutSeconds int `yaml:"timeout_seconds"`
+}
+
+type OpenBao struct {
+    Mount string `yaml:"mount"`
+    Secrets []openbao.Reference `yaml:"secrets"`
+}
+
+var (
+    projectPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
+    servicePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+    hostPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`)
+    mountPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+    registryHostPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.:-]*$`)
+    registryRepoSegmentPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
+    registryUserPattern = regexp.MustCompile(`^[A-Za-z0-9_.@-]+$`)
+    sshHostPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`)
+)
+    runnerLabelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}package config
+
+import (
+    "bytes"
+    "encoding/base64"
+    "encoding/json"
+    "strconv"
+    "errors"
+    "fmt"
+    "io"
+    "os"
+    "path/filepath"
+    "regexp"
+    "strings"
+
+    "gopkg.in/yaml.v3"
+
+    "github.com/jmeiracorbal/docker-blue-green/internal/openbao"
+)
+
+// Document is the single source of project-level Blue-Green settings.
+// Docker Compose remains the source of services and container infrastructure;
+// immutable OCI digests and release versions remain release inputs.
+type Document struct {
+    Version int `yaml:"version"`
+    Project string `yaml:"project"`
+    Routes []Route `yaml:"-"`
+    Registry *Registry `yaml:"registry,omitempty"`
+    CI *CI `yaml:"ci,omitempty"`
+    Deployment *Deployment `yaml:"deployment,omitempty"`
+    OpenBao *OpenBao `yaml:"openbao,omitempty"`
+    Lifecycle *Lifecycle `yaml:"lifecycle,omitempty"`
+}
+
+type Route struct {
+    Host string `yaml:"host" json:"host"`
+    Service string `yaml:"service" json:"service"`
+    Port int `yaml:"port" json:"port"`
+    Shared bool `yaml:"shared,omitempty" json:"shared,omitempty"`
+}
+
+// Registry contains only public OCI destination data, never credentials.
+type Registry struct {
+    Host string `yaml:"host" json:"host"`
+    Repository string `yaml:"repository" json:"repository"`
+    Username string `yaml:"username" json:"username"`
+}
+
+// CI declares project-owned GitHub Actions runner labels. It contains
+// scheduling configuration only; no runner credentials or provider settings.
+type CI struct {
+    RunnerLabels []string `yaml:"runner_labels" json:"runner_labels"`
+}
+
+// Deployment is an optional SSH target. KnownHosts contains a verified SSH
+// public host key; authentication keys stay in GitHub Secrets.
+type Deployment struct {
+    Enabled bool `yaml:"enabled" json:"enabled"`
+    Host string `yaml:"host,omitempty" json:"host,omitempty"`
+    User string `yaml:"user,omitempty" json:"user,omitempty"`
+    Port int `yaml:"port,omitempty" json:"port,omitempty"`
+    KnownHosts string `yaml:"known_hosts,omitempty" json:"known_hosts,omitempty"`
+}
+
+// Lifecycle is a sequence of explicit, container-local one-off operations.
+// Blue-Green does not interpret shell scripts or run database migrations itself.
+type Lifecycle struct {
+    BeforeStart []LifecycleStep `yaml:"before_start,omitempty"`
+    BeforeSwitch []LifecycleStep `yaml:"before_switch,omitempty"`
+}
+
+type LifecycleStep struct {
+    Service string `yaml:"service"`
+    Entrypoint string `yaml:"entrypoint"`
+    Args []string `yaml:"args,omitempty"`
+    TimeoutSeconds int `yaml:"timeout_seconds"`
+}
+
+type OpenBao struct {
+    Mount string `yaml:"mount"`
+    Secrets []openbao.Reference `yaml:"secrets"`
+}
+
+var (
+    projectPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
+    servicePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+    hostPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`)
+    mountPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+    registryHostPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.:-]*$`)
+    registryRepoSegmentPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
+    registryUserPattern = regexp.MustCompile(`^[A-Za-z0-9_.@-]+$`)
+    sshHostPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`)
+)
 )
 
 func Path(root string) string {
@@ -254,6 +446,23 @@ func (cfg Document) Validate(complete bool) error {
             return errors.New("invalid OCI registry username")
         }
     }
+    if cfg.CI != nil {
+        labels:=cfg.CI.RunnerLabels
+        if len(labels)==0 || len(labels)>16 {
+            return errors.New("ci.runner_labels requires between 1 and 16 labels")
+        }
+        seenLabels:=make(map[string]bool,len(labels))
+        for _,label:=range labels {
+            if !runnerLabelPattern.MatchString(label) {
+                return fmt.Errorf("invalid ci.runner_labels entry %q",label)
+            }
+            key:=strings.ToLower(label)
+            if seenLabels[key] {
+                return fmt.Errorf("duplicate ci.runner_labels entry %q",label)
+            }
+            seenLabels[key]=true
+        }
+    }
     if cfg.Deployment != nil {
         dep:=cfg.Deployment
         if !dep.Enabled {
@@ -339,7 +548,8 @@ func (cfg Document) Export() ([]byte, error) {
         Routes []Route `json:"routes"`
         Registry Registry `json:"registry"`
         Deployment Deployment `json:"deployment"`
-    }{Project:cfg.Project, Routes:cfg.Routes,Registry:*cfg.Registry,Deployment:deployment})
+        CI *CI `json:"ci,omitempty"`
+    }{Project:cfg.Project, Routes:cfg.Routes,Registry:*cfg.Registry,Deployment:deployment,CI:cfg.CI})
 }
 
 func (cfg Document) Secrets() (openbao.Manifest, bool) {

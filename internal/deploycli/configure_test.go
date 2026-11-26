@@ -124,3 +124,43 @@ func TestConfigCheckRequiresRegistry(t *testing.T) {
     }
     if err:=Config([]string{"check","--dir",root},&bytes.Buffer{});err!=nil{t.Fatal(err)}
 }
+
+func TestConfigureRunnerLabelsFromProjectContract(t *testing.T) {
+    root:=t.TempDir()
+    prepareProject(t,root,"api")
+    existing:=config.Document{
+        Version:1,Project:"demo",
+        Routes:[]config.Route{{Host:"api.example.com",Service:"api",Port:8000}},
+        Registry:&config.Registry{Host:"ghcr.io",Repository:"team/demo",Username:"publisher"},
+    }
+    if err:=saveConfigured(root,existing);err!=nil{t.Fatal(err)}
+    configure:=func(labels string) error {
+        return Configure([]string{"--dir",root,"--ci-runner-labels",labels},
+            strings.NewReader(""),&bytes.Buffer{})
+    }
+    if err:=configure("self-hosted, linux, x64, build-01");err!=nil{t.Fatal(err)}
+    if err:=configure("self-hosted, linux, x64, build-01");err!=nil{t.Fatal(err)}
+    cfg,err:=config.Load(root)
+    if err!=nil{t.Fatal(err)}
+    if cfg.CI==nil || strings.Join(cfg.CI.RunnerLabels,",")!="self-hosted,linux,x64,build-01" {
+        t.Fatalf("runner labels not persisted: %+v",cfg.CI)
+    }
+    if err:=Config([]string{"check","--dir",root},&bytes.Buffer{});err!=nil{t.Fatal(err)}
+    var exported bytes.Buffer
+    if err:=Config([]string{"export","--dir",root},&exported);err!=nil{t.Fatal(err)}
+    if !strings.Contains(exported.String(),`"runner_labels":["self-hosted","linux","x64","build-01"]`) {
+        t.Fatalf("missing CI in public export: %s",exported.String())
+    }
+    for _,invalid:=range []string{"",",","linux,,x64","linux,LINUX","ubuntu latest", "${{ github.token }}"} {
+        if err:=configure(invalid);err==nil{t.Errorf("accepted invalid runner labels %q",invalid)}
+    }
+    cfg,err=config.Load(root)
+    if err!=nil || cfg.CI==nil || len(cfg.CI.RunnerLabels)!=4 {
+        t.Fatalf("invalid input modified project: %+v, %v",cfg,err)
+    }
+    if err:=configure("ubuntu-latest");err!=nil{t.Fatal(err)}
+    cfg,err=config.Load(root)
+    if err!=nil || cfg.CI==nil || strings.Join(cfg.CI.RunnerLabels,",")!="ubuntu-latest" {
+        t.Fatalf("runner label replacement failed: %+v, %v",cfg,err)
+    }
+}
