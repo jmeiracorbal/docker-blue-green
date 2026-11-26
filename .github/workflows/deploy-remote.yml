@@ -15,6 +15,11 @@ on:
         description: Immutable Git revision of the Blue-Green CLI
         required: true
         type: string
+      runner_labels_json:
+        description: JSON array of GitHub Actions runner labels for every job
+        required: false
+        type: string
+        default: '["ubuntu-latest"]'
     secrets:
       SERVER_SSH_PRIVATE_KEY:
         required: false
@@ -32,7 +37,7 @@ concurrency:
 
 jobs:
   plan:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_labels_json) }}
     outputs:
       enabled: ${{ steps.contract.outputs.enabled }}
       project: ${{ steps.contract.outputs.project }}
@@ -74,7 +79,7 @@ jobs:
   deploy:
     needs: plan
     if: ${{ needs.plan.outputs.enabled == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_labels_json) }}
     steps:
       - uses: actions/checkout@v4
         with:

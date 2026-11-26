@@ -15,6 +15,11 @@ on:
         description: Immutable revision of the Blue-Green configuration engine
         type: string
         required: true
+      runner_labels_json:
+        description: JSON array of GitHub Actions runner labels for every job
+        required: false
+        type: string
+        default: '["ubuntu-latest"]'
     secrets:
       OCI_REGISTRY_TOKEN:
         required: true
@@ -28,7 +33,7 @@ concurrency:
 
 jobs:
   discover:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_labels_json) }}
     outputs:
       matrix: ${{ steps.images.outputs.matrix }}
       registry_host: ${{ steps.registry.outputs.registry_host }}
@@ -97,7 +102,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_labels_json) }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}

@@ -119,6 +119,17 @@ Para bloquear una fusión por un error, el responsable del repositorio debe conf
 
 OpenBao no es un requisito para integrar ni desplegar el proyecto. Si la aplicación necesita credenciales centralizadas, el desarrollador declara referencias mediante `bluegreen secrets add`; el administrador del servidor provisiona los valores KV reales, el AppRole restringido y el proxy. El [ciclo de vida de los secretos](secrets.es.md) explica los comandos, responsables, comprobaciones, archivos de solo lectura en contenedores, rotación y rollback. Los secrets del repositorio GitHub pertenecen al proceso CI/CD y se gestionan por separado.
 
+### Selección de runners para workflows reutilizables
+
+Los workflows reutilizables `publish-images.yml`, `deploy-remote.yml` y `validate-consumer.yml` aceptan `runner_labels_json`, un array JSON de etiquetas del runner de GitHub Actions. El valor predeterminado es `["ubuntu-latest"]`, por lo que los consumidores existentes no cambian. Para utilizar un runner propio, pasar el parámetro en **cada** llamada:
+
+```yaml
+with:
+  runner_labels_json: '["self-hosted","linux","x64","ovh"]'
+```
+
+Este parámetro selecciona el runner de todos los jobs dentro del workflow invocado. Los jobs definidos localmente por el proyecto consumidor deben configurar también su propio `runs-on`. Un JSON incorrecto provoca un error, sin cambiar silenciosamente de runner. En runners propios solo debe ejecutarse código de confianza y deben estar disponibles Go, Docker Compose, Git, SSH y las herramientas necesarias para construir imágenes OCI.
+
 ## 5. Qué ocurre al abrir una pull request
 
 ```mermaid
