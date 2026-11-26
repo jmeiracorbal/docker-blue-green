@@ -119,16 +119,24 @@ To actually prevent merging when checks fail, configure a GitHub branch ruleset 
 
 OpenBao is not required by the integration or deployment process. When an application needs centrally managed credentials, the developer declares references with `bluegreen secrets add` and the server administrator provisions the actual KV values, project-scoped AppRole and proxy. See the complete [secrets lifecycle](secrets.md) for exact commands, roles, presence checks, read-only container delivery, rotation and rollback. GitHub repository secrets are a separate CI/CD concern.
 
-### Selecting runners for reusable workflows
+### CI runner selection in the project contract
 
-The `publish-images.yml`, `deploy-remote.yml` and `validate-consumer.yml` reusable workflows accept `runner_labels_json` as a JSON array of GitHub Actions runner labels. The default is `["ubuntu-latest"]`, preserving existing callers. To use a self-hosted runner, set the input on **each** reusable workflow call:
+Runner labels belong to the single `deploy/bluegreen.yml` configuration, not to a specific application or CI provider:
 
 ```yaml
-with:
-  runner_labels_json: '["self-hosted","linux","x64","ovh"]'
+ci:
+  runner_labels:
+    - self-hosted
+    - linux
+    - x64
+    - build
 ```
 
-This input selects the runner for every job inside the called workflow. Jobs defined locally by the consumer must also set their own `runs-on`. A malformed JSON array fails the workflow rather than silently switching runners. Only trusted application code should execute on self-hosted runners, and the runner must provide the required Go, Docker Compose, Git, SSH and OCI build tooling.
+For automation, `bluegreen configure --ci-runner-labels self-hosted,linux,x64,build` persists the same setting. `bluegreen config check` rejects empty, malformed and duplicate labels; `bluegreen config export` exposes the non-secret CI selection. When `ci` is absent, the currently generated workflows retain their existing runner behavior.
+
+The reusable workflows already accept the transport input `runner_labels_json` as a JSON array, with a default of `["ubuntu-latest"]`. **The generated caller workflows do not yet derive that input (or their local `runs-on`) from the project contract.** That generation/update integration is a separate pending stage. Do not assume configuring labels alone changes the runner used by existing generated workflows.
+
+Only trusted application code should execute on persistent self-hosted runners; the runner must provide Go, Docker Compose, Git, SSH and OCI build tooling.
 
 ## 5. What happens on a pull request?
 

@@ -119,16 +119,24 @@ Para bloquear una fusión por un error, el responsable del repositorio debe conf
 
 OpenBao no es un requisito para integrar ni desplegar el proyecto. Si la aplicación necesita credenciales centralizadas, el desarrollador declara referencias mediante `bluegreen secrets add`; el administrador del servidor provisiona los valores KV reales, el AppRole restringido y el proxy. El [ciclo de vida de los secretos](secrets.es.md) explica los comandos, responsables, comprobaciones, archivos de solo lectura en contenedores, rotación y rollback. Los secrets del repositorio GitHub pertenecen al proceso CI/CD y se gestionan por separado.
 
-### Selección de runners para workflows reutilizables
+### Selección declarativa de runners de CI
 
-Los workflows reutilizables `publish-images.yml`, `deploy-remote.yml` y `validate-consumer.yml` aceptan `runner_labels_json`, un array JSON de etiquetas del runner de GitHub Actions. El valor predeterminado es `["ubuntu-latest"]`, por lo que los consumidores existentes no cambian. Para utilizar un runner propio, pasar el parámetro en **cada** llamada:
+Las etiquetas del runner se declaran en el contrato único `deploy/bluegreen.yml`, sin asociarlas a una aplicación ni a un proveedor:
 
 ```yaml
-with:
-  runner_labels_json: '["self-hosted","linux","x64","ovh"]'
+ci:
+  runner_labels:
+    - self-hosted
+    - linux
+    - x64
+    - build
 ```
 
-Este parámetro selecciona el runner de todos los jobs dentro del workflow invocado. Los jobs definidos localmente por el proyecto consumidor deben configurar también su propio `runs-on`. Un JSON incorrecto provoca un error, sin cambiar silenciosamente de runner. En runners propios solo debe ejecutarse código de confianza y deben estar disponibles Go, Docker Compose, Git, SSH y las herramientas necesarias para construir imágenes OCI.
+El comando `bluegreen configure --ci-runner-labels self-hosted,linux,x64,build` guarda la misma configuración. `bluegreen config check` rechaza etiquetas vacías, malformadas o duplicadas, y `bluegreen config export` publica la selección no sensible. Si no existe la sección `ci`, los workflows generados mantienen el comportamiento actual.
+
+Los workflows reutilizables ya aceptan `runner_labels_json` como array JSON, con valor predeterminado `["ubuntu-latest"]`. **Los workflows consumidores generados todavía no derivan ese parámetro ni los jobs locales `runs-on` del contrato del proyecto.** La integración de generación y actualización constituye una etapa posterior pendiente. Configurar estas etiquetas por sí solo todavía no cambia el runner de los workflows ya generados.
+
+Los runners propios persistentes solo deben ejecutar código de confianza y disponer de Go, Docker Compose, Git, SSH y herramientas para construir imágenes OCI.
 
 ## 5. Qué ocurre al abrir una pull request
 
