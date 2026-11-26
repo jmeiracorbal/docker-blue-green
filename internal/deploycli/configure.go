@@ -10,6 +10,7 @@ import (
     "strings"
 
     "github.com/jmeiracorbal/docker-blue-green/internal/config"
+    "github.com/jmeiracorbal/docker-blue-green/internal/scaffold"
 )
 
 // Configure is the same interactive entry point for every Compose project.
@@ -132,8 +133,12 @@ func Configure(args []string, input io.Reader, output io.Writer) error {
     if err:=cfg.Validate(true);err!=nil{return err}
     if err:=cfg.ValidateApplicationServices(*dir);err!=nil{return err}
     if err:=cfg.ValidateInfrastructureServices(*dir);err!=nil{return err}
+    // Validate both managed workflows before changing the project contract.
+    workflowUpdates,err:=scaffold.PrepareWorkflowRunnerUpdate(*dir,cfg.CI)
+    if err!=nil{return err}
     if err:=config.SaveIngress(*dir,cfg.Routes);err!=nil{return err}
     if err:=config.Save(*dir,cfg);err!=nil{return err}
+    if err:=scaffold.ApplyWorkflowRunnerUpdate(*dir,workflowUpdates);err!=nil{return err}
     _,err=fmt.Fprintf(output,"Configured %s in %s\n",cfg.Project,config.Path(*dir))
     return err
 }

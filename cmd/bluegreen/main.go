@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jmeiracorbal/docker-blue-green/internal/scaffold"
+    "github.com/jmeiracorbal/docker-blue-green/internal/config"
 	"github.com/jmeiracorbal/docker-blue-green/internal/deploycli"
 )
 
@@ -28,7 +29,7 @@ func run(args []string, input io.Reader, output io.Writer) error {
         return deploycli.Run(args, output)
     }
 	if len(args) == 0 || args[0] != "init" {
-		return fmt.Errorf("usage: bluegreen init [--dir PATH] [--compose FILE] [--app SERVICE,...] [--infrastructure SERVICE,...]")
+		return fmt.Errorf("usage: bluegreen init [--dir PATH] [--compose FILE] [--app SERVICE,...] [--infrastructure SERVICE,...] [--ci-runner-labels LABEL1,LABEL2]")
 	}
 	flags := flag.NewFlagSet("init", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -36,12 +37,17 @@ func run(args []string, input io.Reader, output io.Writer) error {
 	source := flags.String("compose", "", "existing Compose file")
 	apps := flags.String("app", "", "comma-separated application services")
 	infrastructure := flags.String("infrastructure", "", "comma-separated infrastructure services")
+    runnerLabels:=flags.String("ci-runner-labels","","comma-separated GitHub Actions runner labels")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
-	if flags.NArg() != 0 {
-		return fmt.Errorf("unexpected arguments: %v", flags.Args())
-	}
+    if flags.NArg()!=0{return fmt.Errorf("unexpected arguments: %v",flags.Args())}
+    var ci *config.CI
+    flags.Visit(func(f *flag.Flag){
+        if f.Name=="ci-runner-labels"{
+            ci=&config.CI{RunnerLabels:split(*runnerLabels)}
+        }
+    })
 	root, err := filepath.Abs(*dir)
 	if err != nil {
 		return err
@@ -62,7 +68,7 @@ func run(args []string, input io.Reader, output io.Writer) error {
 	generated, err := scaffold.Generate(scaffold.Options{
 		Root: root, SourcePath: sourcePath, ComposeJSON: doc,
 		AppServices: split(*apps), InfrastructureServices: split(*infrastructure),
-		Input: input, Output: output,
+		Input: input, Output: output, CI: ci,
 	})
 	if err != nil {
 		return err

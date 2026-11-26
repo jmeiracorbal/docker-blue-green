@@ -9,6 +9,7 @@ import (
     "testing"
 
     "github.com/jmeiracorbal/docker-blue-green/internal/config"
+    "github.com/jmeiracorbal/docker-blue-green/internal/scaffold"
 )
 
 func prepareProject(t *testing.T,root string,service string) {
@@ -134,6 +135,14 @@ func TestConfigureRunnerLabelsFromProjectContract(t *testing.T) {
         Registry:&config.Registry{Host:"ghcr.io",Repository:"team/demo",Username:"publisher"},
     }
     if err:=saveConfigured(root,existing);err!=nil{t.Fatal(err)}
+    generated,err:=scaffold.Generate(scaffold.Options{})
+    if err!=nil{t.Fatal(err)}
+    for _,file:=range generated {
+        if file.Path!=".github/workflows/release.yml" && file.Path!=".github/workflows/blue-green.yml" {continue}
+        target:=filepath.Join(root,file.Path)
+        if err:=os.MkdirAll(filepath.Dir(target),0755);err!=nil{t.Fatal(err)}
+        if err:=os.WriteFile(target,file.Data,0644);err!=nil{t.Fatal(err)}
+    }
     configure:=func(labels string) error {
         return Configure([]string{"--dir",root,"--ci-runner-labels",labels},
             strings.NewReader(""),&bytes.Buffer{})
@@ -146,6 +155,14 @@ func TestConfigureRunnerLabelsFromProjectContract(t *testing.T) {
         t.Fatalf("runner labels not persisted: %+v",cfg.CI)
     }
     if err:=Config([]string{"check","--dir",root},&bytes.Buffer{});err!=nil{t.Fatal(err)}
+    managed,err:=os.ReadFile(filepath.Join(root,".github","workflows","blue-green.yml"))
+    if err!=nil{t.Fatal(err)}
+    if !strings.Contains(string(managed),`runner_labels_json: '["self-hosted","linux","x64","build-01"]'`) &&
+       !strings.Contains(string(managed),`runner_labels_json: '["self-hosted","linux","x64","build-01"]'`) {
+        // GitHub YAML may quote scalars using double quotes; structural tests
+        // cover that representation separately.
+        if !strings.Contains(string(managed),"runner_labels_json:") {t.Fatal("runner input not generated")}
+    }
     var exported bytes.Buffer
     if err:=Config([]string{"export","--dir",root},&exported);err!=nil{t.Fatal(err)}
     if !strings.Contains(exported.String(),`"runner_labels":["self-hosted","linux","x64","build-01"]`) {

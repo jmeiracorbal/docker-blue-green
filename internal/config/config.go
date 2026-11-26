@@ -102,6 +102,14 @@ func Initial() []byte {
     return []byte("version: 1\nproject: \"\"\n")
 }
 
+// InitialWithCI initializes the same canonical project contract for CLI init.
+func InitialWithCI(ci *CI) ([]byte, error) {
+    if ci == nil { return Initial(), nil }
+    cfg := Document{Version: 1, CI: ci}
+    if err := cfg.Validate(false); err != nil { return nil, err }
+    return yaml.Marshal(cfg)
+}
+
 func Parse(data []byte) (Document, error) {
     d := yaml.NewDecoder(bytes.NewReader(data))
     d.KnownFields(true)
