@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jmeiracorbal/docker-blue-green/internal/config"
 )
 
 // This test uses a disposable, genuine OpenBao TLS dev server. It never
@@ -111,6 +113,27 @@ func TestRealOpenBaoDotenvImport(t *testing.T) {
 	t.Setenv("BAO_TOKEN", limitedToken)
 	args := []string{"--dir", project, "--service", "api", "--mount", "kv", "--env-file", envFile}
 	var out bytes.Buffer
+
+	// Force a local contract save failure after genuine OpenBao accepts
+	// the first KV version. A retry must reconcile YAML without re-writing KV.
+	contract := config.Path(project)
+	backing := filepath.Join(project, "deploy", ".original-bluegreen.yml")
+	if err := os.Rename(contract, backing); err != nil { t.Fatal(err) }
+	if err := os.Symlink(backing, contract); err != nil { t.Fatal(err) }
+	err = importSecrets(args, strings.NewReader("yes\n"), &out)
+	if err == nil || !strings.Contains(err.Error(), "local contract could not be saved") {
+		t.Fatalf("expected partial persistence after successful KV write: %v", err)
+	}
+	if strings.Contains(err.Error(), "import-test-one") || strings.Contains(out.String(), "import-test-one") {
+		t.Fatal("partial-persistence failure exposed a secret value")
+	}
+	unchanged, err := config.Load(project)
+	if err != nil || unchanged.OpenBao != nil {
+		t.Fatalf("failed persistence changed the local contract: %v", err)
+	}
+	if err := os.Remove(contract); err != nil { t.Fatal(err) }
+	if err := os.Rename(backing, contract); err != nil { t.Fatal(err) }
+
 	for i := 0; i < 2; i++ {
 		out.Reset()
 		if err := importSecrets(args, strings.NewReader("yes\n"), &out); err != nil { t.Fatal(err) }
